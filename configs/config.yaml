@@ -1,0 +1,178 @@
+# @package _global_
+
+# Section : specify here default training configuration
+defaults:
+  - override hydra/hydra_logging: colorlog
+  - override hydra/job_logging: colorlog
+  - _self_
+
+hydra:
+  run:
+    dir: /logs/${task_full_name}
+  sweep:
+    dir: logs/multiruns/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num}
+
+# Section 关于GPU、CPU的设置
+use_gpu: True
+cuda_max_memory_utilization: 0.2  # nvitop的gpu最大内存使用阈值
+cuda_min_free_memory: 30GiB  # nvitop的gpu最大内存使用量
+# 自动选择两个可用GPU：
+# visible_cuda: auto_select_2
+# 指定使用2号和3号GPU：
+# visible_cuda:
+#   - 2
+#   - 3
+visible_cuda: auto_select_1  # 使用“auto_select_[想要使用的GPU数量]”前缀自动选择可用GPU
+want_gpu_num: 1  # 根据“visible_cuda”自动调整
+default_device: cuda:0  # 默认的设备
+wait_gpus: False  # 是否愿意接受排队等待
+task_id:  # 如果选择等待GPU，那么这将是排队的号，此处无需填写，由程序自动生成
+confirm_gpu_free: False  # 用于标识当前训练任务是否已经确认了GPU出于空闲，如果两次都等到了相同的GPU那么就认为该GPU空闲
+last_confirm_gpus:   # 记录第一次确认空闲的gpus
+
+# Section 关于实验的标记
+run_name:  # 此处无需填写，由程序自动生成
+run_notes: 对实验的解释  # 对本次实验的描述，可以用来记录本次实验的具体细节和改动
+base_identifier_str: ${now:%Y-%m-%d}-${now:%H-%M-%S}
+task_full_name:  # 此处无需填写，由程序自动生成
+comet_name:  # 此处无需填写，由程序自动生成
+logger_project: default  # 与project的文件名对应
+logger:  # comet 如果不想上传可以为空，默认为空，使用脚本训练时将默认开启comet上传
+experiment_key: ${now:%Y%m%d}${now:%H%M%S}${now:%Y%m%d}${now:%H%M%S}19981997  # 如果使用的是comet，那么将使用此时间戳作为experiment_key
+proc_title: Peace and Love  --By Dengyifan   # 修改后的进程名
+
+# Section 关于数据、模型的保存和加载
+# `````````````````````````地址相关`````````````````````````````
+work_dir: ${hydra:runtime.cwd}/${logger_project}
+config_dir: ${work_dir}/configs
+general_files_path: ${work_dir}/general_files
+cache_dir: ${hydra:runtime.cwd}/cache_dir/ # 预训练模型的缓存地址
+ori_data_path: ${work_dir}/data/${dataset}/ori_data/  # 原始数据地址
+data_path: ${work_dir}/data/${dataset}/  # 预处理后的地址
+custom_dict_path: ${data_path}  # 用于自己预训练的词向量
+cache_dataset_path: ${work_dir}/data/${dataset}/  # 数据集缓存地址
+result_path: ${work_dir}/logs/${task_full_name}  # 训练、运行结果、模型checkpoint的保存地址
+# `````````````````````````模型加载相关`````````````````````````````
+fast_run: True  # False, True, 快速运行整个训练和测试过程，便于查找bug
+eval_bad_case_analysis: False
+# 如果model_processor == base:pl.hf_seq2seq_custom，那么pretrain_model格式为 [your_custom_model_file_name]:[pretrain_model_name]
+pretrain_model: t5   # 除了影响到模型加载，还会影响到使用预训练模型的tokenizer还是自定义的tokenizer
+# hf_model_type 可选值如下：
+# "base": AutoModel,
+# "sequence-classification": AutoModelForSequenceClassification,
+# "question-answering": AutoModelForQuestionAnswering,
+# "pretraining": AutoModelForPreTraining,
+# "token-classification": AutoModelForTokenClassification,
+# "language-modeling": AutoModelForCausalLM,
+# "seq2seq": AutoModelForSeq2SeqLM,
+# "base-lm_head": AutoModelWithLMHead,
+hf_model_type: seq2seq
+only_structure: False  # 是否只使用预训练模型的结构而不使用其权重
+stage: train  # test, train, finetune
+ckpt_identifier: [yours_run_name]
+ckpt_path: ${work_dir}/logs/${ckpt_identifier}  # 要加载的模型checkpoint的保存地址
+use_param_noise: True  # 是否使用预训练权重噪音 参考自： https://aclanthology.org/2022.acl-short.76.pdf
+noise_lambda: 0.15  # 权重噪音超参
+# `````````````````````````数据相关`````````````````````````````
+force_reload_data: False  # 是否强制重新处理数据，不使用preprocess_data_path加载
+add_special_tokens_for_input: False  # 是否在input_ids上添加tokenizer专属的开始和结束符号
+add_special_tokens_for_label: False  # 是否在input_ids上添加tokenizer专属的开始和结束符号
+add_special_tokens_for_decoder_input: False  # 是否在input_ids上添加tokenizer专属的开始和结束符号
+dataset: datsaet1  # 影响数据集的存放和保存地址
+dataset_processor: default  # 使用哪个数据集
+model_processor:  # 使用哪个模型
+tokenize_method: auto  # auto, default(空格), nltk, jieba（中文），默认为auto将使用与预训练模型相匹配的tokenizer
+trainer_processor: base_trainer  # 如果使用pl的trainer，文件名称请使用“pl_”开头
+data_mode: dial  # dial, query, classification   可以对一个数据集设置多种数据输出格式
+dataloader_pin_memory: True  # 数据集是否固定在内存中加快读取
+dataloader_num_workers: 0  # 数据集加载线程数
+decoder_max_length: 128  # 解码器最长长度
+encoder_max_length: 128  # 编码器最长长度
+valid_size: 1000  # 验证集大小
+test_size: 1000  # 测试集大小
+train_batch_size: 8  # 训练集的batch大小
+valid_batch_size: 8  # 验证集的batch大小
+test_batch_size: 8  # 测试集的batch大小
+save_total_limit: 1  # 模型checkpoint保存的最大数量
+dataset_part:  # 具体加载哪些数据集（训练数据集、验证数据集、测试数据集）
+  - train
+  - valid
+  - test
+additional_special_tokens:
+
+
+# Section 关于训练相关的参数
+# seed 参考于https://arxiv.org/abs/2109.08203
+seed: 3407
+eval_metrics:  # 测试时计算的评价指标
+  - nlg_eval
+  - ppl
+  - sent_bleu
+  - corpus_bleu
+  - sacrebleu
+  - dist
+  - meteor
+  - rouge
+  - bert_score  # 要求Dataset中含有‘generated’和‘bert_score_reference’两个列
+  - f1  # 要求Dataset中含有‘generated’和‘f1_reference’两个列
+  - charf
+  - q_squared
+
+model_hyparameters:
+
+# `````````````````````````模型生成相关````````````````````````````
+top_k: 8
+top_p: 0.9
+beam_size: 1
+max_generation_length: 128
+generate_method: oracle  # nucleus, oracle, greedy, 如果使用oracle那么就会使用预训练模型自带的generate方法
+num_return_sequences: 1
+# `````````````````````````callback相关````````````````````````````
+checkpoint_monitor: val_loss
+checkpoint_monitr_mode: min
+# `````````````````````````训练流程相关````````````````````````````
+truncation_side: right
+accumulate_grad_batches: 4
+max_epochs: 5
+max_steps: -1
+min_epochs: 2
+# How often to check the validation set.
+# Pass a float in the range [0.0, 1.0] to check after a fraction of the training epoch.
+# Pass an int to check after a fixed number of training batches. Default: 1.0.
+val_steps: 0.5  # 默认为1.0
+log_steps: 10
+lr: 1e-5
+scheduler: linear  # linear, cosine， cosine_w_restarts， polynomial， constant
+adafactor: False  # 使用AdaFactor还是AdamW优化器
+adam_epsilon: 1e-8
+weight_decay: 0
+warmup_ratio: 0  # 优先级高于warmup_steps
+warmup_steps: 200
+t_max: 5  # CosineAnnealingLR的正弦周期
+update_step_size: 1  # StepLR更新学习率的周期，一个step就是一个epoch
+
+
+pl_train_args:
+  gpus: ${visible_cuda}
+  default_root_dir: ${result_path}
+  check_val_every_n_epoch: 1
+  accumulate_grad_batches: ${accumulate_grad_batches}
+  max_epochs: ${max_epochs}
+  min_epochs: ${min_epochs}
+  max_steps: ${max_steps}
+  val_check_interval: ${val_steps}
+  resume_from_checkpoint: ${ckpt_path}
+  auto_lr_find: True
+  fast_dev_run: ${fast_run}
+  log_every_n_steps: ${log_steps}
+
+
+
+# Section 其他
+# pretty print config at the start of the run using Rich library
+print_config: True
+# disable python warnings if they annoy you
+ignore_warnings: True
+
+

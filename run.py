@@ -2,7 +2,7 @@
 Author: Deng Yifan 553192215@qq.com
 Date: 2022-08-25 08:27:32
 LastEditors: Deng Yifan 553192215@qq.com
-LastEditTime: 2022-08-26 16:45:11
+LastEditTime: 2022-08-26 17:33:01
 FilePath: /dg_templete/run.py
 Description: 
 
@@ -101,7 +101,8 @@ def main(config: DictConfig) -> float:
             sub_module_path = config.logger_project + \
                 '.modules.' + sub_model_processor_name
             sub_module_path = sub_module_path.replace('.', '/')
-        experiment.log_asset(config.root_dir + '/' + sub_module_path + ".py")
+            experiment.log_asset(config.root_dir + '/' +
+                                 sub_module_path + ".py")
 
     extras(config)
 

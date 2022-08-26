@@ -732,8 +732,8 @@ def send_msg_to_DingTalk_and_wx(msg, config):
         see `secret`
 
     """
-    webhook_url = global_config.dingding_msg_web_hook,
-    secret = global_config.dingding_msg_secret,
+    webhook_url = global_config.dingding_msg_web_hook
+    secret = global_config.dingding_msg_secret
     user_mentions = []
     msg_template = {
         "msgtype": "text",

@@ -145,8 +145,8 @@ def main(config: DictConfig) -> float:
 
 
 @dingtalk_sender_and_wx(
-    webhook_url=global_config.dingding_msg_web_hook,
-    secret=global_config.dingding_msg_secret,
+    webhook_url=global_config.dingding_web_hook,
+    secret=global_config.dingding_secret,
 )
 def train_or_test_with_DingTalk(config, log, experiment):
     test_results = Result()

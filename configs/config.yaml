@@ -8,7 +8,7 @@ defaults:
 
 hydra:
   run:
-    dir: ../logs/${task_full_name}
+    dir: logs/${task_full_name}
   sweep:
     dir: logs/multiruns/${now:%Y-%m-%d_%H-%M-%S}
     subdir: ${hydra.job.num}
@@ -17,6 +17,8 @@ hydra:
 # 创建钉钉群后，添加自定义的群机器人，获取secret和web_hook_url
 dingding_msg_secret: xxxx
 dingding_msg_web_hook: xxxx
+dingding_secret: xxxx
+dingding_web_hook: xxxx
 dingding_msg_user_mentions:
   # 想要@的手机号
   - xxxx

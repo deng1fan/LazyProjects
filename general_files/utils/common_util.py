@@ -38,6 +38,11 @@ import base64
 import urllib
 import requests
 from nvitop import select_devices
+import yaml
+
+with open("./configs/config.yaml", 'r') as file:
+    global_config = DictConfig(yaml.safe_load(file.read()))
+
 
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -86,21 +91,21 @@ def extras(config: DictConfig) -> None:
 def print_config(
         config: DictConfig,
         fields: Sequence[str] = (
-                "root_dir",
-                "work_dir",
-                "data_path",
-                "pl_train_args",
-                "seed",
-                "fast_run",
-                "pretrain_model",
-                "use_gpu",
-                "visible_cuda",
-                "default_device",
-                "task_full_name",
-                "model_processor",
-                "dataset_processor",
-                "trainer_processor",
-                "stage",
+            "root_dir",
+            "work_dir",
+            "data_path",
+            "pl_train_args",
+            "seed",
+            "fast_run",
+            "pretrain_model",
+            "use_gpu",
+            "visible_cuda",
+            "default_device",
+            "task_full_name",
+            "model_processor",
+            "dataset_processor",
+            "trainer_processor",
+            "stage",
         ),
         resolve: bool = True,
 ) -> None:
@@ -114,7 +119,8 @@ def print_config(
     """
 
     style = "cyan"
-    tree = rich.tree.Tree("CONFIG", style=style, highlight=True, guide_style=style)
+    tree = rich.tree.Tree("CONFIG", style=style,
+                          highlight=True, guide_style=style)
 
     for field in fields:
         branch = tree.add(field, style=style, guide_style=style)
@@ -140,17 +146,28 @@ def seed_everything(seed):
 def check_config(config):
     config.cache_dir = config.cache_dir + config.pretrain_model.split(':')[-1]
     config.run_name = f'<{config.dataset}><{config.pretrain_model}>'
-    config.cache_dataset_path = config.cache_dataset_path + f"<{config.dataset}><{config.pretrain_model}><{config.run_notes}>"
+    config.cache_dataset_path = config.cache_dataset_path + \
+        f"<{config.dataset}><{config.pretrain_model}><{config.run_notes}>"
+
+    # 自动添加Multirun的搜索参数
+    for arg in sys.argv:
+        if 'choice' in arg or 'range' in arg:
+            key = arg.split('=')[0]
+            value = config[key]
+            config.run_name += f'__{key}={value}'
+
     if config.get('fast_run') and config.get('stage') != 'test':
         # 快速运行整个训练和测试流程，便于查找bug
         config.run_name = config.run_name + f'__fast_run__'
         config.pl_train_args.auto_lr_find = False
+
     if config.stage == 'test' and config.eval_bad_case_analysis:
         config.dataset_part = ['valid', 'test']
     if config.stage in ['train', 'pretrain']:
         config.ckpt_path = None
     config.comet_name = f"<{config.stage}><{config.run_notes}>{config.run_name}"
     config.task_full_name = f"<{config.stage}><{config.run_notes}><{config.generate_method}>{config.run_name}{config.base_identifier_str}"
+
     # 设置cuda
     if not config.use_gpu:
         # 不使用gpu
@@ -161,10 +178,12 @@ def check_config(config):
     else:
         # 使用gpu
         if config.wait_gpus:
-            config.want_gpu_num = int(config.visible_cuda.split('auto_select_')[-1]) if 'auto_select_' in str(config.visible_cuda) else len(config.visible_cuda)
+            config.want_gpu_num = int(config.visible_cuda.split(
+                'auto_select_')[-1]) if 'auto_select_' in str(config.visible_cuda) else len(config.visible_cuda)
             config.default_device = f'cpu'
         else:
-            gpus = config.visible_cuda.split(',') if ',' in str(config.visible_cuda) else config.visible_cuda
+            gpus = config.visible_cuda.split(',') if ',' in str(
+                config.visible_cuda) else config.visible_cuda
             if isinstance(gpus, int):
                 config.want_gpu_num = 1
                 config.default_device = f'cuda:{gpus}'
@@ -180,6 +199,7 @@ def get_parent_dir(path=None, offset=-1):
         result = os.path.dirname(result)
     return result
 
+
 class MyProgressCallback(transformers.TrainerCallback):
     def __init__(self):
         super().__init__()
@@ -192,8 +212,9 @@ class MyProgressCallback(transformers.TrainerCallback):
 
     def on_train_begin(self, args, state, control, **kwargs):
         if state.is_local_process_zero:
-            self.progress, self.training_bar = get_progress_bar('Train', total_step=state.max_steps)
-            self.progress.start()  ## 开启
+            self.progress, self.training_bar = get_progress_bar(
+                'Train', total_step=state.max_steps)
+            self.progress.start()  # 开启
         self.current_step = 0
 
     def on_step_begin(self, args, state, control, **kwargs):
@@ -230,8 +251,10 @@ class MyProgressCallback(transformers.TrainerCallback):
                     self.prediction_bar = self.progress.add_task(f"[red]Predict", total=len(eval_dataloader),
                                                                  loss='???')
                 else:
-                    self.progress, self.prediction_bar = get_progress_bar('Predict', total_step=state.max_steps)
-            self.progress.update(self.prediction_bar, advance=1, refresh=True, loss=self.valid_loss)
+                    self.progress, self.prediction_bar = get_progress_bar(
+                        'Predict', total_step=state.max_steps)
+            self.progress.update(self.prediction_bar,
+                                 advance=1, refresh=True, loss=self.valid_loss)
 
     def on_evaluate(self, args, state, control, **kwargs):
         if state.is_local_process_zero:
@@ -275,19 +298,23 @@ def get_progress_bar(task_name, total_step):
         TimeElapsedColumn(),
         "<",
         TimeRemainingColumn(compact=True, elapsed_when_finished=True),
-        TextColumn("· [bright_yellow]{task.completed}[bright_black]/[turquoise2]{task.total}"),
+        TextColumn(
+            "· [bright_yellow]{task.completed}[bright_black]/[turquoise2]{task.total}"),
         TextColumn("· [bold bright_red]loss:{task.fields[loss]}"),
         expand=True,
         transient=True,
         refresh_per_second=1
     )
-    progress_bar = job_progress.add_task(f"[green]{task_name}", total=total_step, loss='???')
+    progress_bar = job_progress.add_task(
+        f"[green]{task_name}", total=total_step, loss='???')
     return job_progress, progress_bar
+
 
 @rank_zero_only
 def print_parameters(model):
     total_num = sum(p.numel() for p in model.parameters())
-    trainable_num = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    trainable_num = sum(p.numel()
+                        for p in model.parameters() if p.requires_grad)
     _dict = {}
     for _, param in enumerate(model.named_parameters()):
         total_params = param[1].numel()
@@ -310,6 +337,7 @@ def print_parameters(model):
         table.add_row(k, str(round(v / (1024 * 1024), 4)))
     console.print(table, justify='center')
 
+
 @rank_zero_only
 def print_dict_to_table(input_dict, column1_name, column2_name, title, config):
     console = Console(color_system='256', style="cyan")
@@ -321,10 +349,13 @@ def print_dict_to_table(input_dict, column1_name, column2_name, title, config):
     for k, v in input_dict.items():
         table.add_row(k, str(v))
     console.print(table)
-    # 去除rich的格式修饰符
-    save_title_name = re.sub(r'\[.*\]', '', title)
-    with open(f"{config.result_path}/{save_title_name}.txt", "w") as fp:
-        rich.print(table, file=fp)
+
+    if not config.fast_run:
+        # 去除rich的格式修饰符
+        save_title_name = re.sub(r'\[.*\]', '', title)
+        with open(f"{config.result_path}/{save_title_name}.txt", "w") as fp:
+            rich.print(table, file=fp)
+
 
 @rank_zero_only
 def print_generated_dialogs(test_output, experiment, show_num=5, mode='dial', config=None):
@@ -344,37 +375,49 @@ def print_generated_dialogs(test_output, experiment, show_num=5, mode='dial', co
                       justify='center')
         console.print(f"[bold green]Generated Example {i}", justify='center')
         for k in features:
-            console.print(f"[bold red]>>>> [bold orange1]{k} [bold red]<<<<", justify='left')
+            console.print(
+                f"[bold red]>>>> [bold orange1]{k} [bold red]<<<<", justify='left')
             console.print("[bold cyan]" + str(features[k][i]), justify='left')
         console.print("[bold]···········································································",
                       justify='center')
 
-    if save_path:
+    if save_path and not config.fast_run:
         test_output_df = pd.DataFrame(test_output)
         test_output_df = test_output_df.loc[:, save_columns]
         if '.ckpt' in save_path:
             save_path = '/'.join(save_path.split('/')[:-1])
         if not os.path.exists(save_path):
             os.mkdir(save_path)
+        test_output_df.to_csv(save_path + '/test_output.csv')
         test_output_df.to_excel(save_path + '/test_output.xlsx')
         generated = [str(s) + '\n' for s in test_output['generated_seqs']]
-        generated_with_special_tokens = [str(s) + '\n' for s in test_output['generated_seqs_with_special_tokens']]
-        save_as(generated, save_path + '/generated_' + mode, data_name='generated_' + mode, file_format='txt')
-        save_as(generated_with_special_tokens, save_path + '/generated_with_special_tokens_' + mode, data_name='generated_with_special_tokens_' + mode, file_format='txt')
+        generated_with_special_tokens = [
+            str(s) + '\n' for s in test_output['generated_seqs_with_special_tokens']]
+        save_as(generated, save_path + '/generated_' + mode,
+                data_name='generated_' + mode, file_format='txt')
+        save_as(generated_with_special_tokens, save_path + '/generated_with_special_tokens_' +
+                mode, data_name='generated_with_special_tokens_' + mode, file_format='txt')
         if experiment and config.logger == 'comet':
             features_df = pd.DataFrame(features)
-            experiment.log_table(tabular_data=features_df, filename='generated_' + mode + '.csv')
-            experiment.log_asset(save_path + '/generated_' + mode + '.txt', file_name='generated_' + mode)
-            experiment.log_asset(save_path + '/generated_with_special_tokens_' + mode + '.txt', file_name='generated_with_special_tokens_' + mode)
-            log.info(f'已将生成结果:generated_{mode}、generated_with_special_tokens_{mode}保存到comet!')
+            experiment.log_table(tabular_data=features_df,
+                                 filename='generated_' + mode + '.csv')
+            experiment.log_asset(save_path + '/generated_' +
+                                 mode + '.txt', file_name='generated_' + mode)
+            experiment.log_asset(save_path + '/generated_with_special_tokens_' +
+                                 mode + '.txt', file_name='generated_with_special_tokens_' + mode)
+            log.info(
+                f'已将生成结果:generated_{mode}、generated_with_special_tokens_{mode}保存到comet!')
             ###############################################
             # 推送到钉钉
             ###############################################
             run_name = config.task_full_name.replace('/', '--')
             send_msg_to_DingTalk_and_wx("正在上传生成结果！！！🎉🎉🎉", config)
-            send_file_to_DingTalk(save_path + '/test_output.xlsx', f"生成结果__{run_name}.xlsx")
-            send_file_to_DingTalk(save_path + '/generated_' + mode + '.txt', f"生成句子__{run_name}.txt")
-            send_file_to_DingTalk(save_path + '/generated_with_special_tokens_' + mode + '.txt', f"带特殊符的生成句子__{run_name}.txt")
+            send_file_to_DingTalk(
+                save_path + '/test_output.xlsx', f"生成结果__{run_name}.xlsx")
+            send_file_to_DingTalk(
+                save_path + '/generated_' + mode + '.txt', f"生成句子__{run_name}.txt")
+            send_file_to_DingTalk(
+                save_path + '/generated_with_special_tokens_' + mode + '.txt', f"带特殊符的生成句子__{run_name}.txt")
 
 
 def switch_color(color=None):
@@ -464,7 +507,8 @@ class Result(dict):
             if key not in self.keys():
                 self[key] = []
 
-            self[key].append(next_dict[key]) if isinstance(self[key], list) else [self[key]].append(next_dict[key])
+            self[key].append(next_dict[key]) if isinstance(
+                self[key], list) else [self[key]].append(next_dict[key])
 
 
 class CustomCometLoggerForPL(CometLogger):
@@ -485,8 +529,8 @@ class CustomCometLoggerForPL(CometLogger):
         # self.experiment.end()
         # self.reset_experiment()
 
+
 def dingtalk_sender_and_wx(webhook_url: str,
-                           user_mentions: List[str] = [],
                            secret: str = '',
                            keywords: List[str] = []):
     """
@@ -511,6 +555,8 @@ def dingtalk_sender_and_wx(webhook_url: str,
         see `secret`
 
     """
+    user_mentions = list([str(i)
+                         for i in global_config.dingding_msg_user_mentions])
     msg_template = {
         "msgtype": "text",
         "text": {
@@ -530,10 +576,11 @@ def dingtalk_sender_and_wx(webhook_url: str,
         secret_enc = secret.encode('utf-8')
         string_to_sign = '{}\n{}'.format(timestamp, secret)
         string_to_sign_enc = string_to_sign.encode('utf-8')
-        hmac_code = hmac.new(secret_enc, string_to_sign_enc, digestmod=hashlib.sha256).digest()
+        hmac_code = hmac.new(secret_enc, string_to_sign_enc,
+                             digestmod=hashlib.sha256).digest()
         sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
         encrypted_url = webhook_url + '&timestamp={}'.format(timestamp) \
-                        + '&sign={}'.format(sign)
+            + '&sign={}'.format(sign)
         return encrypted_url
 
     def decorator_sender(func):
@@ -590,7 +637,8 @@ def dingtalk_sender_and_wx(webhook_url: str,
                                 '机器名: %s\n' % host_name,
                                 '使用显卡序号: %s\n' % visible_cuda,
                                 '进程ID: %s\n' % str(os.getpid()),
-                                '开始时间: %s\n' % start_time.strftime(DATE_FORMAT),
+                                '开始时间: %s\n' % start_time.strftime(
+                                    DATE_FORMAT),
                                 '结束时间: %s\n' % end_time.strftime(DATE_FORMAT),
                                 '训练时长: %s\n' % str(elapsed_time)]
 
@@ -598,7 +646,8 @@ def dingtalk_sender_and_wx(webhook_url: str,
                         str_value = "\n\n" + value.flatten_to_print()
                         contents.append('=====运行信息===== %s' % str_value)
                     except:
-                        contents.append('=====运行信息=====\n %s' % "ERROR - Couldn't str the returned value.")
+                        contents.append('=====运行信息=====\n %s' %
+                                        "ERROR - Couldn't str the returned value.")
 
                     wx_contents = contents
 
@@ -683,9 +732,8 @@ def send_msg_to_DingTalk_and_wx(msg, config):
         see `secret`
 
     """
-    # todo 替换成自己的钉钉webhook
-    webhook_url = "xxx"
-    secret = "xxxx"
+    webhook_url = global_config.dingding_msg_web_hook,
+    secret = global_config.dingding_msg_secret,
     user_mentions = []
     msg_template = {
         "msgtype": "text",
@@ -706,12 +754,12 @@ def send_msg_to_DingTalk_and_wx(msg, config):
         secret_enc = secret.encode('utf-8')
         string_to_sign = '{}\n{}'.format(timestamp, secret)
         string_to_sign_enc = string_to_sign.encode('utf-8')
-        hmac_code = hmac.new(secret_enc, string_to_sign_enc, digestmod=hashlib.sha256).digest()
+        hmac_code = hmac.new(secret_enc, string_to_sign_enc,
+                             digestmod=hashlib.sha256).digest()
         sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
         encrypted_url = webhook_url + '&timestamp={}'.format(timestamp) \
-                        + '&sign={}'.format(sign)
+            + '&sign={}'.format(sign)
         return encrypted_url
-
 
     start_time = datetime.datetime.now()
     host_name = socket.gethostname()
@@ -743,7 +791,8 @@ def send_msg_to_DingTalk_and_wx(msg, config):
                 str_value = "\n\n" + config_info.flatten_to_print()
                 contents.append('=====运行信息===== %s' % str_value)
             except:
-                contents.append('=====运行信息=====\n %s' % "ERROR - Couldn't str the returned value.")
+                contents.append('=====运行信息=====\n %s' %
+                                "ERROR - Couldn't str the returned value.")
 
             wx_contents = contents
 
@@ -785,7 +834,8 @@ def send_msg_to_DingTalk_and_wx(msg, config):
             str_value = "\n\n" + config_info.flatten_to_print()
             contents.append('=====运行信息===== %s' % str_value)
         except:
-            contents.append('=====运行信息=====\n %s' % "ERROR - Couldn't str the returned value.")
+            contents.append('=====运行信息=====\n %s' %
+                            "ERROR - Couldn't str the returned value.")
 
         msg_template['text']['content'] = '\n'.join(contents)
         if secret:
@@ -800,10 +850,10 @@ def send_msg_to_DingTalk_and_wx(msg, config):
 
 def send_file_to_DingTalk(file_path, file_name):
     def getAccess_token():
-        appkey = 'xxxxx'
-        # todo 替换自己的key
-        appsecret = 'xxxxx'  # 替换自己的secret
-        url = 'https://oapi.dingtalk.com/gettoken?appkey=%s&appsecret=%s' % (appkey, appsecret)
+        appkey = global_config.dingding_file_appkey
+        appsecret = global_config.dingding_file_appsecret
+        url = 'https://oapi.dingtalk.com/gettoken?appkey=%s&appsecret=%s' % (
+            appkey, appsecret)
         headers = {'Content-Type': "application/x-www-form-urlencoded"}
         data = {'appkey': appkey, 'appsecret': appsecret}
         r = requests.request('GET', url, data=data, headers=headers)
@@ -816,11 +866,10 @@ def send_file_to_DingTalk(file_path, file_name):
         url = 'https://oapi.dingtalk.com/media/upload?access_token=%s&type=file' % access_token
         files = {'media': (file_name, open(file, 'rb'))}
         data = {'access_token': access_token,
-         'type': 'file'}
+                'type': 'file'}
         response = requests.post(url, files=files, data=data)
         json = response.json()
         return json["media_id"]
-
 
     access_token = getAccess_token()
     media_id = getMedia_id(file_path, file_name)
@@ -829,44 +878,53 @@ def send_file_to_DingTalk(file_path, file_name):
         'Content-Type': 'application/json'
     }
     data = {'access_token': access_token,
-            # todo 替换自己的群id
-            'chatid': 'xxxx',
+            'chatid': global_config.dingding_file_chat_id,
             'msg': {
                 'msgtype': 'file',
                 'file': {'media_id': media_id}
             }}
-    response = requests.request('POST', url, data=json.dumps(data), headers=header)
+    response = requests.request(
+        'POST', url, data=json.dumps(data), headers=header)
     if response.ok:
         log.info(f'已成功推送文件-->{file_name} 到钉钉！')
     else:
         log.info(f'推送文件-->{file_name}到钉钉失败：{response.text}！')
 
+
 def send_wechat(title, msg):
-    # todo 替换自己的token 申请地址：https://www.pushplus.plus
-    token = 'xxxx'
+    token = global_config.weixin_api_token
     title = title
     content = msg
     template = 'txt'
     url = f"https://www.pushplus.plus/send?token={token}&title={title}&content={content}&template={template}"
     requests.get(url=url)
 
+
 def print_gpu_info(gpus):
-    devices = Device.cuda.from_cuda_indices(gpus)  # or `Device.all()` to use NVML ordinal instead
+    # or `Device.all()` to use NVML ordinal instead
+    devices = Device.cuda.from_cuda_indices(gpus)
     separator = False
     for device in devices:
         processes = device.processes()  # type: Dict[int, GpuProcess]
         print(colored(str(device), color='green', attrs=('bold',)))
-        print(colored('  - GPU physical index: ', color='blue', attrs=('bold',)) + f'{device.physical_index}')
-        print(colored('  - GPU utilization: ', color='blue', attrs=('bold',)) + f'{device.gpu_utilization()}%')
-        print(colored('  - Total memory:    ', color='blue', attrs=('bold',)) + f'{device.memory_total_human()}')
-        print(colored('  - Used memory:     ', color='blue', attrs=('bold',)) + f'{device.memory_used_human()}')
-        print(colored('  - Free memory:     ', color='blue', attrs=('bold',)) + f'{device.memory_free_human()}')
+        print(colored('  - GPU physical index: ', color='blue',
+              attrs=('bold',)) + f'{device.physical_index}')
+        print(colored('  - GPU utilization: ', color='blue',
+              attrs=('bold',)) + f'{device.gpu_utilization()}%')
+        print(colored('  - Total memory:    ', color='blue',
+              attrs=('bold',)) + f'{device.memory_total_human()}')
+        print(colored('  - Used memory:     ', color='blue',
+              attrs=('bold',)) + f'{device.memory_used_human()}')
+        print(colored('  - Free memory:     ', color='blue',
+              attrs=('bold',)) + f'{device.memory_free_human()}')
 
         if len(processes) > 0:
-            processes = GpuProcess.take_snapshots(processes.values(), failsafe=True)
+            processes = GpuProcess.take_snapshots(
+                processes.values(), failsafe=True)
             processes.sort(key=lambda process: (process.username, process.pid))
 
-            print(colored(f'  - Processes ({len(processes)}):', color='blue', attrs=('bold',)))
+            print(
+                colored(f'  - Processes ({len(processes)}):', color='blue', attrs=('bold',)))
             fmt = '    {pid:<5}  {username:<8} {cpu:>5}  {host_memory:>8} {time:>8}  {gpu_memory:>8}  {sm:>3}  {command:<}'.format
             print(colored(fmt(pid='PID', username='USERNAME',
                               cpu='CPU%', host_memory='HOST-MEM', time='TIME',
@@ -879,7 +937,8 @@ def print_gpu_info(gpus):
                               '+' if len(snapshot.username) > 8 else snapshot.username[7:8]),
                           cpu=snapshot.cpu_percent, host_memory=snapshot.host_memory_human,
                           time=snapshot.running_time_human,
-                          gpu_memory=(snapshot.gpu_memory_human if snapshot.gpu_memory_human is not NA else 'WDDM:N/A'),
+                          gpu_memory=(
+                              snapshot.gpu_memory_human if snapshot.gpu_memory_human is not NA else 'WDDM:N/A'),
                           sm=snapshot.gpu_sm_utilization,
                           command=snapshot.command))
         else:
@@ -887,6 +946,7 @@ def print_gpu_info(gpus):
         if separator:
             print('-' * 120)
         separator = True
+
 
 def set_config_gpus(config):
     redis_client = RedisClient()
@@ -909,7 +969,7 @@ def set_config_gpus(config):
             else:
                 config.want_gpu_num = len(available_gpus)
                 config.default_device = f'cuda:{available_gpus[0]}'
-            redis_client.register_gpus(config)
+            config.task_id = redis_client.register_gpus(config)
             log.info(f"自动选择GPU：{str(config.visible_cuda)}")
         else:
             # 可用GPU不足
@@ -941,7 +1001,7 @@ def set_config_gpus(config):
             else:
                 config.want_gpu_num = len(available_gpus)
                 config.default_device = f'cuda:{available_gpus[0]}'
-            redis_client.register_gpus(config)
+            config.task_id = redis_client.register_gpus(config)
         else:
             # 排队
             config.task_id = redis_client.join_wait_queue(config)
@@ -959,7 +1019,7 @@ def set_config_gpus(config):
             try:
                 min_count = config.want_gpu_num
                 gpus = select_devices(format='index', min_count=min_count,
-                                      min_free_memory=config.cuda_min_free_memory,max_memory_utilization=config.cuda_max_memory_utilization)
+                                      min_free_memory=config.cuda_min_free_memory, max_memory_utilization=config.cuda_max_memory_utilization)
                 self_occupied_gpus = redis_client.get_self_occupied_gpus()
                 if not isinstance(config.visible_cuda, str):
                     # 如果指定了GPU
@@ -992,7 +1052,7 @@ def set_config_gpus(config):
                             config.want_gpu_num = len(available_gpus)
                             config.default_device = f'cuda:{available_gpus[0]}'
                         redis_client.pop_wait_queue(config)
-                        redis_client.register_gpus(config)
+                        config.task_id = redis_client.register_gpus(config)
                         break
                     else:
                         # 设置单次确认空闲
@@ -1025,10 +1085,10 @@ def set_config_gpus(config):
 class RedisClient:
     def __init__(self):
         self.client = Redis(host='127.0.0.1',
-                              port=6379,
-                              decode_responses=True,
-                              charset='UTF-8',
-                              encoding='UTF-8')
+                            port=6379,
+                            decode_responses=True,
+                            charset='UTF-8',
+                            encoding='UTF-8')
 
     def get_self_occupied_gpus(self, only_gpus=True):
         """
@@ -1038,7 +1098,8 @@ class RedisClient:
         if only_gpus:
             all_gpus = []
             for task in self_occupied_gpus.values():
-                gpus = [int(device) for device in json.loads(task)["use_gpus"].split(",")]
+                gpus = [int(device)
+                        for device in json.loads(task)["use_gpus"].split(",")]
                 all_gpus.extend(gpus)
             return set(all_gpus)
         return [json.loads(g) for g in self_occupied_gpus.values()]
@@ -1049,7 +1110,8 @@ class RedisClient:
         """
         curr_time = datetime.datetime.now()
         creat_time = datetime.datetime.strftime(curr_time, '%Y-%m-%d %H:%M:%S')
-        task_id = str(os.getpid()) + '*' + str(int(time.mktime(time.strptime(creat_time, "%Y-%m-%d %H:%M:%S"))))
+        task_id = str(os.getpid()) + '*' + \
+            str(int(time.mktime(time.strptime(creat_time, "%Y-%m-%d %H:%M:%S"))))
         content = {
             "want_gpus": config.want_gpu_num,
             "create_time": creat_time,
@@ -1067,7 +1129,8 @@ class RedisClient:
             log.info(f"正在排队中！ 目前排第一位哦！")
         else:
             log.info(f"正在排队中！ 前方还有 {wait_num} 个训练任务！")
-        log.info(f"tips: 如果想要对任务进行调整可以移步Redis客户端进行数据修改，只建议进行修改 want_gpus 参数以及删除训练任务操作，其他操作可能会影响Redis读取的稳定性")
+        log.info(
+            f"tips: 如果想要对任务进行调整可以移步Redis客户端进行数据修改，只建议进行修改 want_gpus 参数以及删除训练任务操作，其他操作可能会影响Redis读取的稳定性")
         return task_id
 
     def is_my_turn(self, config):
@@ -1086,7 +1149,8 @@ class RedisClient:
             # 登记异常信息
             log.info("当前训练任务并不排在队列第一位，请检查Redis数据正确性！")
         curr_time = datetime.datetime.now()
-        update_time = datetime.datetime.strftime(curr_time, '%Y-%m-%d %H:%M:%S')
+        update_time = datetime.datetime.strftime(
+            curr_time, '%Y-%m-%d %H:%M:%S')
         task['update_time'] = update_time
         self.client.lset("wait_queue", 0, json.dumps(task))
         log.info("更新训练任务时间戳成功！")
@@ -1109,7 +1173,8 @@ class RedisClient:
         curr_time = datetime.datetime.now()
         creat_time = datetime.datetime.strftime(curr_time, '%Y-%m-%d %H:%M:%S')
         if not config.task_id:
-            task_id = str(os.getpid()) + '*' + str(int(time.mktime(time.strptime(creat_time, "%Y-%m-%d %H:%M:%S"))))
+            task_id = str(os.getpid(
+            )) + '*' + str(int(time.mktime(time.strptime(creat_time, "%Y-%m-%d %H:%M:%S"))))
         else:
             task_id = config.task_id
         content = {
@@ -1125,6 +1190,7 @@ class RedisClient:
         }
         self.client.hset("self_occupied_gpus", task_id, json.dumps(content))
         log.info("成功登记Gpu使用信息到Redis服务器！")
+        return task_id
 
     def deregister_gpus(self, config):
         """
@@ -1147,23 +1213,39 @@ def print_start_image():
         "[bold cyan]\u2502 \u25CE \u25CB \u25CB \u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591  Start  \u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2502")
     console.print(
         "[bold cyan]\u251C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524")
-    console.print("[bold cyan]\u2502                                                              \u2502")
-    console.print("[bold cyan]\u2502                                                              \u2502")
-    console.print("[bold cyan]\u2502                _     _ _______ __   __        /              \u2502")
-    console.print("[bold cyan]\u2502                |_____| |______   \\_/         /               \u2502")
-    console.print("[bold cyan]\u2502                |     | |______    |         .                \u2502")
-    console.print("[bold cyan]\u2502                                                              \u2502")
-    console.print("[bold cyan]\u2502                     _____ _______ . _______                  \u2502")
-    console.print("[bold cyan]\u2502                       |      |    ' |______                  \u2502")
-    console.print("[bold cyan]\u2502                     __|__    |      ______|                  \u2502")
-    console.print("[bold cyan]\u2502                                                              \u2502")
-    console.print("[bold cyan]\u2502                 ______  _______ __   _  ______               \u2502")
-    console.print("[bold cyan]\u2502                 |     \\ |______ | \\  | |  ____               \u2502")
-    console.print("[bold cyan]\u2502                 |_____/ |______ |  \\_| |_____|               \u2502")
-    console.print("[bold cyan]\u2502                                                              \u2502")
-    console.print("[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502                _     _ _______ __   __        /              \u2502")
+    console.print(
+        "[bold cyan]\u2502                |_____| |______   \\_/         /               \u2502")
+    console.print(
+        "[bold cyan]\u2502                |     | |______    |         .                \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502                     _____ _______ . _______                  \u2502")
+    console.print(
+        "[bold cyan]\u2502                       |      |    ' |______                  \u2502")
+    console.print(
+        "[bold cyan]\u2502                     __|__    |      ______|                  \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502                 ______  _______ __   _  ______               \u2502")
+    console.print(
+        "[bold cyan]\u2502                 |     \\ |______ | \\  | |  ____               \u2502")
+    console.print(
+        "[bold cyan]\u2502                 |_____/ |______ |  \\_| |_____|               \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
     console.print(
         "[bold cyan]\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518")
+
 
 @rank_zero_only
 def print_end_image():
@@ -1174,25 +1256,43 @@ def print_end_image():
     console.print("[bold cyan]\u2502 \u25CE \u25CB \u25CB \u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591 Ending  \u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2502")
     console.print()
     console.print("[bold cyan]\u251C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524")
-    console.print("[bold cyan]\u2502                                                              \u2502")
-    console.print("[bold cyan]\u2502                                                              \u2502")
-    console.print("[bold cyan]\u2502                  ______  _____   _____  ______               \u2502")
-    console.print("[bold cyan]\u2502                 |  ____ |     | |     | |     \\              \u2502")
-    console.print("[bold cyan]\u2502                 |_____| |_____| |_____| |_____/              \u2502")
-    console.print("[bold cyan]\u2502                                                              \u2502")
-    console.print("[bold cyan]\u2502      ______ _______ _______ _     _        _______        /  \u2502")
-    console.print("[bold cyan]\u2502     |_____/ |______ |______ |     | |         |          /   \u2502")
-    console.print("[bold cyan]\u2502     |    \\_ |______ ______| |_____| |_____    |         .    \u2502")
-    console.print("[bold cyan]\u2502                                                              \u2502")
-    console.print("[bold cyan]\u2502                                                              \u2502")
-    console.print("[bold cyan]\u2502              ______  __   __ _______        /   /            \u2502")
-    console.print("[bold cyan]\u2502              |_____]   \\_/   |______       /   /             \u2502")
-    console.print("[bold cyan]\u2502              |_____]    |    |______      .   .              \u2502")
-    console.print("[bold cyan]\u2502                                                              \u2502")
-    console.print("[bold cyan]\u2502                                                              \u2502")
-    console.print("[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502                  ______  _____   _____  ______               \u2502")
+    console.print(
+        "[bold cyan]\u2502                 |  ____ |     | |     | |     \\              \u2502")
+    console.print(
+        "[bold cyan]\u2502                 |_____| |_____| |_____| |_____/              \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502      ______ _______ _______ _     _        _______        /  \u2502")
+    console.print(
+        "[bold cyan]\u2502     |_____/ |______ |______ |     | |         |          /   \u2502")
+    console.print(
+        "[bold cyan]\u2502     |    \\_ |______ ______| |_____| |_____    |         .    \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502              ______  __   __ _______        /   /            \u2502")
+    console.print(
+        "[bold cyan]\u2502              |_____]   \\_/   |______       /   /             \u2502")
+    console.print(
+        "[bold cyan]\u2502              |_____]    |    |______      .   .              \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
+    console.print(
+        "[bold cyan]\u2502                                                              \u2502")
     console.print(
         "[bold cyan]\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518")
+
 
 def print_error_info(e):
     print('str(Exception):\t', str(Exception))
@@ -1205,6 +1305,7 @@ def print_error_info(e):
           (type(exc_value), ('not', '')[exc_value is e]))
     print('traceback.print_exc(): ', traceback.print_exc())
     print('traceback.format_exc():\n%s' % traceback.format_exc())
+
 
 if __name__ == "__main__":
     r = Result()

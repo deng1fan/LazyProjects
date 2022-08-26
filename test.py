@@ -2,7 +2,7 @@ import os
 import torch
 from omegaconf import DictConfig, OmegaConf
 from general_files.models.base_files.processor import get_model_processor
-from general_files.utils.common_util import print_generated_dialogs, print_parameters, get_logger, set_config_gpus
+from general_files.utils.common_util import print_generated_dialogs, RedisClient, print_parameters, get_logger, set_config_gpus
 from general_files.utils.others.data_processor.processor import get_data_processor
 from general_files.utils.data_util import get_tokenized_data, concatenate_multi_datasets, print_dataset_overview, print_sample_data, read_by
 from general_files.utils.model_util import get_eval_metrics, generate_sentences, predict_labels
@@ -102,6 +102,7 @@ def test(config: DictConfig, experiment):
                                },
                 desc='生成语句字典展开映射')
             test_output = test_output.remove_columns(['generated'])
+        
         log.info(f"保存测试输出结果...: {config.ckpt_path}")
         torch.save(test_output, test_output_path + '/test_output', data_name="测试输出")
 
@@ -130,4 +131,15 @@ def test(config: DictConfig, experiment):
         log.info("评估模型！")
         test_results = get_eval_metrics(test_output, model, config, tokenizer)
         return test_results
+    
+    log.info(f"运行结果保存在：")
+    log.info(f"{config.result_path}")
+    
+    ###############################################
+    # 删除Redis的Gpu占用记录
+    ###############################################
+    if config.task_id:
+        redis_client = RedisClient()
+        redis_client.deregister_gpus(config)
+    
     return None

@@ -1,3 +1,14 @@
+
+###
+ # @Author: Deng Yifan 553192215@qq.com
+ # @Date: 2022-08-19 14:09:34
+ # @LastEditors: Deng Yifan 553192215@qq.com
+ # @LastEditTime: 2022-08-26 15:30:56
+ # @FilePath: /dg_templete/run.sh
+ # @Description: 
+ # 
+ # Copyright (c) 2022 by Deng Yifan 553192215@qq.com, All Rights Reserved. 
+### 
 ADD_COLOR(){
 RED_COLOR='\E[1;31m'
 GREEN_COLOR='\E[1;32m'
@@ -33,7 +44,7 @@ esac
 }
 
 # 项目变化时自动变换路径
-base_path=$(dirname $(dirname $(pwd)))
+base_path=$(pwd)
 export PYTHONPATH=$base_path
 
 cd $base_path
@@ -47,20 +58,35 @@ day_time=$(date "+%Y-%m-%d")
 hour_time=$(date "+%H-%M-%S")
 read -p "如需启用experiment，请输入名称(eg:'e1,e2')，否则按回车: " experiment
 
+sweep_args=""
+read -p "如果要进行Multirun，请输入要探索的参数及取值，否则请按回车: " sub_sweep_args
+sweep_args=$sweep_args" "$sub_sweep_args
+while ! [ -z "$sub_sweep_args" ]; do
+     read -p "继续输入，否则请按回车: " sub_sweep_args
+     sweep_args=$sweep_args" "$sub_sweep_args" "
+done
+
+sweep_args="--multirun"$sweep_args
 
 mkdir -p $work_path/$day_time
 
-ADD_COLOR "此次运行对应的日志保存在: " bleu
+ADD_COLOR "此次运行对应的日志保存在: " blue
 ADD_COLOR $work_path/$day_time/$hour_time green
 
 if [ -z ${experiment} ]; then
-		experiment=""
-elif [[ $experiment == *","* ]]; then
-		experiment="--multirun +experiment="$experiment
-		ADD_COLOR "Using experiment: "$experiment pink
+     experiment=""
+elif [ $experiment == *","* ]; then
+     if [ -z "$sweep_args" ]; then
+          experiment="--multirun +experiment="$experiment
+     fi
+     ADD_COLOR "Using experiment: "$experiment pink
 else
-		experiment="+experiment="$experiment
-		ADD_COLOR "Using experiment: "$experiment pink
+     experiment="+experiment="$experiment
+     ADD_COLOR "Using experiment: "$experiment pink
 fi
 
-nohup python run.py fast_run=False use_gpu=True wait_gpus=True force_reload_data=True logger=comet > $work_path/$day_time/$hour_time.txt 2>&1 $experiment
+ADD_COLOR "使用的超参数如下：" pink
+all_args=$sweep_args"fast_run=False use_gpu=True wait_gpus=True force_reload_data=True logger=comet "$experiment
+ADD_COLOR "$all_args" green
+
+nohup python run.py $sweep_args fast_run=False use_gpu=True wait_gpus=True force_reload_data=True logger=comet > $work_path/$day_time/$hour_time.txt 2>&1 $experiment

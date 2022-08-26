@@ -1,4 +1,14 @@
 #!/bin/bash
+###
+ # @Author: Deng Yifan 553192215@qq.com
+ # @Date: 2022-08-26 14:02:16
+ # @LastEditors: Deng Yifan 553192215@qq.com
+ # @LastEditTime: 2022-08-26 15:36:54
+ # @FilePath: /dg_templete/env.sh
+ # @Description: 
+ # 
+ # Copyright (c) 2022 by Deng Yifan 553192215@qq.com, All Rights Reserved. 
+### 
 
 ADD_COLOR(){
 RED_COLOR='\E[1;31m'
@@ -75,10 +85,8 @@ conda install pytorch torchvision torchaudio zip cudatoolkit
 curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 
-# 去官网下载安装包，直接用代码下载速度较慢
 # https://spacy.io/models/en/#en_core_web_sm
-# 安装下载好的en_core_web_sm-3.4.0.tar.gz，路径替换为自己的路径
-pip install /home/dengyf/en_core_web_sm-3.4.0.tar.gz
+pip install ./en_core_web_sm-3.4.0.tar.gz
 
 echo ''
 echo ''

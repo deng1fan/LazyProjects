@@ -4,7 +4,4 @@
 base_path=$(pwd)
 export PYTHONPATH=$base_path
 
-cd $base_path/general_files/utils/others/redis_client || exit
-work_path=$base_path/general_files/utils/others/redis_client
-
-nohup python maintain_redis_data.py > $work_path/redis_nohup.txt 2>&1
+nohup python $base_path/general_files/utils/others/redis_client/maintain_redis_data.py > $base_path/redis_nohup.txt 2>&1

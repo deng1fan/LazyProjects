@@ -1,23 +1,14 @@
 '''
 Author: D-Yifan https://github.com/D-Yifan
 Date: 2022-10-28 11:55:26
-LastEditors: D-Yifan https://github.com/D-Yifan
-LastEditTime: 2022-10-28 12:01:31
+LastEditors: appleloveme 553192215@qq.com
+LastEditTime: 2022-10-28 22:12:09
 FilePath: /dg_templete/data/utils.py
 Description: 
 
 Copyright (c) 2022 by D-Yifan https://github.com/D-Yifan, All Rights Reserved. 
 '''
-"""
-Author: Deng Yifan 553192215@qq.com
-Date: 2022-07-07 08:15:04
-LastEditors: Deng Yifan 553192215@qq.com
-LastEditTime: 2022-09-19 17:21:56
-FilePath: faith_dial/utils.py
-Description: 
 
-Copyright (c) 2022 by Deng Yifan 553192215@qq.com, All Rights Reserved. 
-"""
 from general_files.utils.common_util import Result
 from general_files.utils.data_util import flat, replace_word
 from nltk.tokenize import sent_tokenize

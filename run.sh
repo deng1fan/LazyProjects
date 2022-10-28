@@ -154,7 +154,6 @@ ADD_COLOR "👉👉👉  使用 tmux a -t [session_name] 命令查看实验进�
 ADD_COLOR "👉👉👉  使用 tmux kill-session -a -t [session_name] 命令结束指定实验！     👈👈👈" blue
 ADD_COLOR "👉👉👉  使用 tmux ls 命令查看所有实验！                                    👈👈👈" blue
 ADD_COLOR "👉👉👉  使用 tmux kill-session -a 命令结束所有实验！                       👈👈👈" blue
-# ADD_COLOR "👉👉👉  关注 Comet 和 钉钉 获取实验最新动态!                                👈👈👈" blue
 ADD_COLOR "" blue
 
 

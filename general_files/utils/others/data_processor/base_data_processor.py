@@ -6,11 +6,20 @@ log = utils.get_logger(__name__)
 
 
 class BaseProcessor:
-    def __init__(self, config, tokenizer=None, model=None, only_test=False):
+    def __init__(self, config, tokenizer=None, only_test=False):
         self.config = config
         self.tokenizer = tokenizer
         self.only_test = only_test
-        self.model = model
+        self.dataset_public_path_map = {
+            "wow": f"{config.public_data_path}/wizard_of_wikipedia",
+            "faith_dial": f"{config.public_data_path}/faith_dial",
+            "qrecc": f"{config.public_data_path}/qrecc",
+            "persona_chat": f"{config.public_data_path}/persona_chat",
+        }
+        self.public_dataset_path = self.get_public_data_path()
+        
+    def get_public_data_path(self):
+        return self.dataset_public_path_map[self.config.dataset]
 
     def get_dataset(self):
         """
@@ -53,8 +62,8 @@ class BaseProcessor:
             )
             if '__index_level_0__' in test_data_tokenized.column_names:
                 test_data_tokenized = test_data_tokenized.remove_columns('__index_level_0__')
-        columns = list(train_rows.keys()) if train_rows is not None else None
-        test_columns = list(test_rows.keys()) if test_rows is not None else None
+        columns = list(train_rows.keys()) if train_data_tokenized is not None else None
+        test_columns = list(test_rows.keys()) if test_data_tokenized is not None else None
         raw_data = (
             train_data_tokenized.remove_columns(
                 list(set(train_data_tokenized.column_names).difference(set(columns)))) \

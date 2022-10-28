@@ -1,0 +1,75 @@
+# @package _global_
+
+# Section 关于GPU、CPU的设置
+#use_gpu: False
+wait_gpus: True  # 是否愿意接受排队等待
+
+# Section 关于实验的标记
+#logger: comet  # 如果不想上传可以为空，默认为空
+logger_project: exp_1
+run_notes: baseline  # 对本次实验的描述，可以用来记录本次实验的具体细节和改动
+proc_title: What’s up   # 修改后的进程名
+
+# Section 关于数据、模型的保存和加载
+# `````````````````````````模型加载相关`````````````````````````````
+fast_run: True  # False, True, 快速运行整个训练和测试过程，便于查找bug
+pretrain_model: t5-base  # 除了影响到模型加载，还会影响到使用预训练模型的tokenizer还是自定义的tokenizer
+only_structure: False  # 是否只使用预训练模型的结构而不使用其权重
+stage: train  # test, train, finetune
+ckpt_identifier: 
+use_param_noise: True
+# `````````````````````````数据相关```````````````````````````````
+dataset: wow  # 影响数据集的存放和保存地址
+dataset_version: base  # 使用哪个版本的数据集预处理
+dataset_processor: ${dataset}.base  # 使用的数据processor
+model_processor: base:hf_seq2seq_base  # 如果使用general_files中的基础模型，需要以“base:”开头
+force_reload_data: False  # True, False # 是否强制重新处理数据，不使用preprocess_data_path加载
+decoder_max_length: 256  # 解码器最长长度
+encoder_max_length: 256  # 编码器最长长度
+train_batch_size: 16  # 训练集的batch大小
+valid_batch_size: 16  # 验证集的batch大小
+test_batch_size: 16  # 测试集的batch大小
+# `````````````````````````特殊设置`````````````````````````````
+
+dataset_split: random  # WoW数据集的划分方式，random, topic
+additional_special_tokens:
+    - <user>
+    - <bot>
+    - <knowledge>
+
+# Section 关于训练相关的参数
+eval_metrics:
+#  - nlg_eval
+  - ppl
+  - sent_bleu
+  - corpus_bleu
+  - sacrebleu
+  - dist
+  - meteor
+  - rouge
+  - bert_score  # 要求Dataset中含有‘generated’和‘bert_score_reference’两个列
+  - f1  # 要求Dataset中含有‘generated’和‘f1_reference’两个列
+  - charf
+#  - q_squared  # 耗时，慎开
+
+# `````````````````````````模型生成相关````````````````````````````
+temperature: 0.89
+beam_size: 3
+top_k: 8
+top_p: 0.9
+max_generation_length: 128
+# `````````````````````````训练流程相关````````````````````````````
+max_epochs: 20
+lr: 6.25e-5
+scheduler: linear  # linear, constant, cosine， cosine_w_restarts， polynomial
+adafactor: False  # 使用AdaFactor还是AdamW优化器
+weight_decay: 0.0
+warmup_ratio: 0.04  # 优先级高于warmup_steps
+warmup_steps: 200
+# `````````````````````````特殊参数````````````````````````````
+
+# Section 关于trainer的特定参数
+pl_train_args:
+  auto_lr_find: True  # True, False
+  gradient_clip_algorithm: norm
+  gradient_clip_val: 3.5

@@ -1,3 +1,4 @@
+
 import os
 import sys
 import torch.nn as nn
@@ -5,7 +6,7 @@ from transformers import BertTokenizer, AutoTokenizer
 from general_files.utils import common_util as utils
 from general_files.utils.common_util import Result
 from general_files.utils.others.data_processor.processor import get_data_processor
-from general_files.utils.others.glove.train_glove import save_column_to_train
+
 
 log = utils.get_logger(__name__)
 
@@ -23,22 +24,29 @@ class Tokenizer(nn.Module):
 
     def init_dict(self):
         if self.tokenizer is not None:
+            if self.tokenizer.cls_token and not self.tokenizer.bos_token:
+                self.tokenizer.bos_token = self.tokenizer.cls_token
+            if self.tokenizer.sep_token and not self.tokenizer.eos_token:
+                self.tokenizer.eos_token = self.tokenizer.sep_token
             additional_flags = ['<mask>']
             if not self.tokenizer.pad_token:
                 self.pad_token = '<pad>'
                 additional_flags.append('<pad>')
+                self.tokenizer.pad_token = '<pad>'
             else:
                 self.pad_token = self.tokenizer.pad_token
 
             if not self.tokenizer.unk_token:
                 self.unk_token = '<unk>'
                 additional_flags.append('<unk>')
+                self.tokenizer.unk_token = '<unk>'
             else:
                 self.unk_token = self.tokenizer.unk_token
 
             if not self.tokenizer.bos_token:
                 self.bos_token = '<bos>'
                 additional_flags.append('<bos>')
+                self.tokenizer.bos_token = '<bos>'
             else:
                 self.bos_token = self.tokenizer.bos_token
             self.start_token = self.tokenizer.bos_token
@@ -53,6 +61,7 @@ class Tokenizer(nn.Module):
             if not self.tokenizer.sep_token:
                 self.sep_token = '<sep>'
                 additional_flags.append('<sep>')
+                self.tokenizer.sep_token = '<sep>'
             else:
                 self.sep_token = self.tokenizer.sep_token
 
@@ -76,15 +85,15 @@ class Tokenizer(nn.Module):
         dict_path = self.config.custom_dict_path
         if not os.path.exists(f'{dict_path}vocab.txt'):
             # Init data
-            log.info("缺少数据字典！即将生成数据字典！")
-            data_processor = get_data_processor(self.config)
-            all_sents = data_processor.get_all_sents()
-            tokenized_sents = self.encode(all_sents)
-            save_column_to_train(tokenized_sents, self.config.general_files_path)
-            print("请先使用glove文件中的Bash脚本训练，训练完成后使用以下命令将词表和词向量移到项目的数据集目录中")
-            print(f"mv {self.config.general_files_path}/utils/glove/vectors.txt {dict_path}vectors.txt")
-            print(f"mv {self.config.general_files_path}/utils/glove/vocab.txt {dict_path}vocab.txt")
-            print('移动完成后，请重新运行程序以加载词表')
+            log.info("缺少数据字典！需要生成数据字典！")
+            # data_processor = get_data_processor(self.config)
+            # all_sents = data_processor.get_all_sents()
+            # tokenized_sents = self.encode(all_sents)
+            # save_column_to_train(tokenized_sents, self.config.general_files_path)
+            # print("请先使用glove文件中的Bash脚本训练，训练完成后使用以下命令将词表和词向量移到项目的数据集目录中")
+            # print(f"mv {self.config.general_files_path}/utils/glove/vectors.txt {dict_path}vectors.txt")
+            # print(f"mv {self.config.general_files_path}/utils/glove/vocab.txt {dict_path}vocab.txt")
+            # print('移动完成后，请重新运行程序以加载词表')
             sys.exit(0)
         else:
             words = []
@@ -123,7 +132,7 @@ class Tokenizer(nn.Module):
         self.sep_token = '<sep>'
         self.decode_dict = {k: v for v, k in self.word_dict.items()}
 
-    def set_special_token(self, bos_token=None, eos_token=None, sep_token=None):
+    def set_special_token(self, bos_token=None, eos_token=None, sep_token=None, pad_token=None):
         if bos_token:
             self.bos_token = bos_token
             if bos_token not in self.tokenizer.vocab:
@@ -132,6 +141,8 @@ class Tokenizer(nn.Module):
             self.bos_token_id = self.tokenizer.convert_tokens_to_ids(bos_token)
             self.start_token = self.bos_token
             self.start_token_id = self.bos_token_id
+            if self.tokenizer:
+                self.tokenizer.bos_token = bos_token
         if eos_token:
             self.eos_token = eos_token
             if eos_token not in self.tokenizer.vocab:
@@ -140,13 +151,24 @@ class Tokenizer(nn.Module):
             self.eos_token_id = self.tokenizer.convert_tokens_to_ids(eos_token)
             self.end_token = self.eos_token
             self.end_token_id = self.eos_token_id
+            if self.tokenizer:
+                self.tokenizer.eos_token = eos_token
         if sep_token:
             self.sep_token = sep_token
             if sep_token not in self.tokenizer.vocab:
                 self.tokenizer.add_special_tokens(
                     {'additional_special_tokens': [sep_token]})
             self.sep_token_id = self.tokenizer.convert_tokens_to_ids(sep_token)
-            self.sep_token = self.sep_token
+            if self.tokenizer:
+                self.tokenizer.sep_token = sep_token
+        if pad_token:
+            self.pad_token = pad_token
+            if pad_token not in self.tokenizer.vocab:
+                self.tokenizer.add_special_tokens(
+                    {'additional_special_tokens': [pad_token]})
+            self.pad_token_id = self.tokenizer.convert_tokens_to_ids(pad_token)
+            if self.tokenizer:
+                self.tokenizer.pad_token = pad_token
         self.vocab_size = len(self.tokenizer)
 
     def add_special_tokens(self, special_tokens):
@@ -165,6 +187,7 @@ class Tokenizer(nn.Module):
                     for token in insert_tokens:
                         f.write(token + ' 9999999' + '\n')
         else:
+            special_tokens = list(set(special_tokens + self.tokenizer.all_special_tokens)) 
             self.tokenizer.add_special_tokens(
                 {'additional_special_tokens': special_tokens})
             self.vocab_size = len(self.tokenizer)
@@ -190,9 +213,9 @@ class Tokenizer(nn.Module):
                                                           truncation=truncation,
                                                           add_special_tokens=add_special_tokens,
                                                           return_offsets_mapping=return_offsets_mapping,
-                                                          *args, **kwargs).data for i in inp]
+                                                          *args, **kwargs).data if i != [] else [] for i in inp]
                         if only_input_ids:
-                            tokenized_inputs = [ti['input_ids'] for ti in tokenized_inputs]
+                            tokenized_inputs = [ti['input_ids'] if ti != [] else [] for ti in tokenized_inputs]
                     else:
                         tokenized_inputs = self.tokenizer(inp,
                                                           padding=padding,
@@ -216,9 +239,9 @@ class Tokenizer(nn.Module):
                                                           truncation=truncation,
                                                           add_special_tokens=add_special_tokens,
                                                           return_offsets_mapping=return_offsets_mapping,
-                                                          *args, **kwargs).data for inp in inputs[key]]
+                                                          *args, **kwargs).data if inp != [] else [] for inp in inputs[key]]
                         if only_input_ids:
-                            tokenized_inputs = [ti['input_ids'] for ti in tokenized_inputs]
+                            tokenized_inputs = [ti['input_ids'] if ti != [] else [] for ti in tokenized_inputs]
                     else:
                         tokenized_inputs = self.tokenizer(inputs[key],
                                                           padding=padding,
@@ -346,15 +369,7 @@ class Tokenizer(nn.Module):
         if pretrain_model in ['fnlp/bart-base-chinese', 'fnlp/bart-large-chinese', 'fnlp/cpt-large',
                               'fnlp/cpt-base']:
             # 一些特殊情况处理
-            tokenizer = BertTokenizer.from_pretrained(pretrain_model, cache_dir=self.config.cache_dir,
-                                                      # bos_token=self.config.bos_token,
-                                                      # eos_token=self.config.eos_token,
-                                                      # sep_token=self.config.sep_token,
-                                                      )
+            tokenizer = BertTokenizer.from_pretrained(pretrain_model, cache_dir=self.config.cache_dir)
         else:
-            tokenizer = AutoTokenizer.from_pretrained(pretrain_model, cache_dir=self.config.cache_dir,
-                                                      # bos_token=self.config.bos_token,
-                                                      # eos_token=self.config.eos_token,
-                                                      # sep_token=self.config.sep_token,
-                                                      )
+            tokenizer = AutoTokenizer.from_pretrained(pretrain_model, cache_dir=self.config.cache_dir)
         return tokenizer

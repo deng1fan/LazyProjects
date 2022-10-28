@@ -2,7 +2,7 @@ from general_files.utils.common_util import RedisClient
 import psutil
 import json
 import time
-from nvitop import Device, GpuProcess, NA, colored
+from nvitop import Device, GpuProcess, NA
 import setproctitle
 
 setproctitle.setproctitle("Redis Watcher!!!")

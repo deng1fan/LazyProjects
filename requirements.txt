@@ -4,7 +4,7 @@ bert_score==0.3.11
 colorama==0.4.5
 comet_ml==3.31.12
 datasets==2.4.0
-evaluate==0.2.2
+evaluate==0.3.0
 gensim==3.8.3
 hydra-core==1.2.0
 jieba==0.42.1

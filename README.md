@@ -22,6 +22,8 @@
 
 使用前需要先根据env.sh中的注释修改相应的选项
 
+安装 redis 实现GPU排队，安装 redis 可参考[非Root用户在Linux安装Redis，并允许远程连接此数据库](https://zhuanlan.zhihu.com/p/552627015)
+
 如果有微信、钉钉通知的需要，按照configs/config.yaml中的说明申请对应的Webhook和token
 
 如果要使用Comet.ml实验管理平台，需要申请[API key](https://www.comet.com)，填入到.comet.config中，然后将此文件移到用户根目录下
@@ -29,6 +31,7 @@
 # 依赖包
 
     bash env.sh
+  
 
 # 数据集
 

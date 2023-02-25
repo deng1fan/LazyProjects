@@ -1,24 +1,25 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+*.pyc
 *.py[cod]
 *$py.class
-
-
+.DS_Store
+.idea/
 .git/
 # 自定义
 *.zip
 *.jar
 *.pt
-data/*/*.pt
-data/*/*.json
-data/*/*.csv
-data/*/*.txt
-data/*/*/*.txt
+*.json
+*.csv
+*.txt
 *.tgz
+*.gz
 nohup/
 logs/
+nltk_data/
 cache_dir/
-.history/
+.history
 
 # C extensions
 *.so
@@ -144,3 +145,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+.history/

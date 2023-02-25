@@ -16,11 +16,13 @@
 
 ![](https://img.shields.io/badge/知乎-一个邓-orange)
 
-[博客](https://zhuanlan.zhihu.com/p/552293287)
+更多框架细节请关注该博客 👉 [一种优雅却不失灵活的深度学习框架理念](https://zhuanlan.zhihu.com/p/552293287)
 
 深度学习项目框架
 
 使用前需要先根据env.sh中的注释修改相应的选项
+
+安装 redis 实现GPU排队，安装 redis 可参考[非Root用户在Linux安装Redis，并允许远程连接此数据库](https://zhuanlan.zhihu.com/p/552627015)
 
 如果有微信、钉钉通知的需要，按照configs/config.yaml中的说明申请对应的Webhook和token
 
@@ -29,6 +31,7 @@
 # 依赖包
 
     bash env.sh
+  
 
 # 数据集
 

@@ -14,8 +14,6 @@ class BaseProcessor:
         self.only_test = only_test
         self.dataset_public_path_map = {
             "wow": f"{config.public_data_path}/wizard_of_wikipedia",
-            "faith_dial": f"{config.public_data_path}/faith_dial",
-            "qrecc": f"{config.public_data_path}/qrecc",
             "persona_chat": f"{config.public_data_path}/persona_chat",
             "wow_faithdial": f"{config.public_data_path}/wow_faithdial",
         }

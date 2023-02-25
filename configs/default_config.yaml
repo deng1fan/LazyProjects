@@ -1,60 +1,63 @@
 # @package _global_
 
-# Section : specify here default training configuration
 defaults:
   - override hydra/hydra_logging: colorlog
   - override hydra/job_logging: colorlog
   - _self_
 
+comet_api_key: ***
 
 # 钉钉和微信通知设置的信息
 # 创建钉钉群后，添加自定义的群机器人，获取secret和web_hook_url
-dingding_secret: XXXXX
-dingding_web_hook: XXXXX
-dingding_msg_web_hook: XXXXX
-dingding_msg_secret: XXXXX
+dingding_secret: ***
+dingding_web_hook: ***
+dingding_msg_web_hook: ***
+dingding_msg_secret: ***
 dingding_msg_user_mentions:
   # 想要@的手机号
-  - 12345678901
+  - ***
 
 # 需要创建企业应用，获取appkey和appsecret可参考下面链接
 # https://open.dingtalk.com/document/group/message-types-supported-by-enterprise-internal-robots
-dingding_file_appkey: XXXXX
-dingding_file_appsecret: XXXXX
+dingding_file_appkey: ***
+dingding_file_appsecret: ***
 # 获取群聊id可参考下面链接
 # https://blog.csdn.net/qq_43382853/article/details/114290220
-dingding_file_chat_id: XXXXX
+dingding_file_chat_id: ***
+send_result_file_to_dingding: False
 
 use_wechat: False  # 是否使用微信通知
 # 微信token申请地址
 # https://www.pushplus.plus
-weixin_api_token: XXXXX
+weixin_api_token: ***
 
 # Section 关于GPU、CPU的设置
-use_gpu: True
+use_gpu: True  # 是否使用 GPU
+wait_gpus: True  # 是否愿意接受排队等待
+limit_the_amount_of_gpu_you_can_use: 10  # 限制使用的GPU数量
 cuda_max_memory_utilization: 0.2 # nvitop的gpu最大内存使用阈值
-cuda_min_free_memory: 30GiB # nvitop的gpu最大内存使用量
+cuda_min_free_memory: 15GiB # nvitop的gpu最大内存使用量
 # 自动选择两个可用GPU：
 # visible_cuda: auto_select_2
 # 指定使用2号和3号GPU：
 # visible_cuda:
 #   - 2
 #   - 3
-visible_cuda: auto_select_1 # 使用“auto_select_[想要使用的GPU数量]”前缀自动选择可用GPU
-want_gpu_num: 1 # 根据“visible_cuda”自动调整
-default_device: cuda:0 # 默认的设备
-wait_gpus: False # 是否愿意接受排队等待
+visible_cuda: auto_select_1  # 使用“auto_select_[想要使用的GPU数量]”前缀自动选择可用GPU
+want_gpu_num: 1  # 根据“visible_cuda”自动调整
+default_device: cuda:0  # 默认的设备，自动填充
 task_id: # 如果选择等待GPU，那么这将是排队的号，此处无需填写，由程序自动生成
 confirm_gpu_free: False # 用于标识当前训练任务是否已经确认了GPU出于空闲，如果两次都等到了相同的GPU那么就认为该GPU空闲
 last_confirm_gpus: # 记录第一次确认空闲的gpus
 
 # Section 关于实验的标记
-run_notes: 对实验的解释 # 对本次实验的描述，可以用来记录本次实验的具体细节和改动
+comet_name: 对实验的解释 # 对本次实验的简短描述
+memo: 对实验的详细解释  # 对本次实验的详细描述，可以用来记录本次实验的具体细节和改动
 base_identifier_str: ${now:%Y-%m-%d}-${now:%H-%M-%S}
 task_full_name: # 此处无需填写，由程序自动生成
-comet_name: # 此处无需填写，由程序自动生成
 logger_project: default # 与project的文件名对应
 logger: # comet 如果不想上传可以为空，默认为空，使用脚本训练时将默认开启comet上传
+experiment_plan_id: # 此处无需填写，由程序自动生成
 experiment_key: ${now:%Y%m%d}${now:%H%M%S}${now:%Y%m%d}${now:%H%M%S}19981997 # 如果使用的是comet，那么将使用此时间戳作为experiment_key
 proc_title: Peace and Love  --By Dengyifan # 修改后的进程名
 
@@ -67,13 +70,14 @@ general_files_path: ${hydra:runtime.cwd}/general_files
 cache_dir: ${hydra:runtime.cwd}/cache_dir/  # 预训练模型的缓存地址
 public_data_path: ${hydra:runtime.cwd}/data 
 result_path: ${work_dir}/logs/${task_full_name}  # 训练、运行结果、模型checkpoint的保存地址
+script_path:  # 第三方生成数据测试脚本位置
 
 # `````````````````````````模型加载相关`````````````````````````````
 fast_run: True # False, True, 快速运行整个训练和测试过程，便于查找bug
 eval_bad_case_analysis: False
-# 如果model_processor == base:pl.hf_custom，那么pretrain_model格式为 [your_custom_model_file_name]:[pretrain_model_name]
-model_processor: # 使用哪个模型
-pretrain_model: t5 # 除了影响到模型加载，还会影响到使用预训练模型的tokenizer还是自定义的tokenizer
+# 如果model_processor == base:pl.hf_seq2seq_custom，那么pretrain_model格式为 [your_custom_model_file_name]:[pretrain_model_name]
+model_processor: 当前是默认配置，是不是忘了指定配置文件了？ # 使用哪个模型
+pretrain_model: 当前是默认配置，是不是忘了指定配置文件了？ # 除了影响到模型加载，还会影响到使用预训练模型的tokenizer还是自定义的tokenizer
 # hf_model_type 可选值如下：
 # "base": AutoModel,
 # "sequence-classification": AutoModelForSequenceClassification,
@@ -84,11 +88,11 @@ pretrain_model: t5 # 除了影响到模型加载，还会影响到使用预训�
 # "seq2seq": AutoModelForSeq2SeqLM,
 # "base-lm_head": AutoModelWithLMHead,
 hf_model_type: seq2seq
-pipline_model:  # 如果使用pipeline，那么这里将是pipeline的模型权重名称，可以是 ckpt 路径，也可以是Huggingface的模型名称
-pipline_ckpt:   # 如果使用pipeline，那么这里将是pipeline的模型权重名称，可以是 ckpt 路径，也可以是Huggingface的模型名称
-pipline_model_processor:  # 如果 pipline 使用 ckpt，需要此指定使用哪个模型处理文件
+pipline_model: 当前是默认配置，是不是忘了指定配置文件了？ # 如果使用pipeline，那么这里将是pipeline的模型权重名称，可以是 ckpt 路径，也可以是Huggingface的模型名称
+pipline_ckpt: 当前是默认配置，是不是忘了指定配置文件了？  # 如果使用pipeline，那么这里将是pipeline的模型权重名称，可以是 ckpt 路径，也可以是Huggingface的模型名称
+pipline_model_processor: 当前是默认配置，是不是忘了指定配置文件了？ # 如果 pipline 使用 ckpt，需要此指定使用哪个模型处理文件
 pipline_model_type: seq2seq  # 如果 pipline 使用 ckpt，需要此指定使用哪种Huggingface的模型种类，同hf_model_type
-only_structure:   False # 是否只使用预训练模型的结构而不使用其权重
+only_structure: False # 是否只使用预训练模型的结构而不使用其权重
 stage: train # test, train, finetune
 ckpt_identifier: [yours_run_name]
 ckpt_path: ${work_dir}/logs/${ckpt_identifier} # 要加载的模型checkpoint的保存地址
@@ -96,18 +100,21 @@ use_param_noise: False # 是否使用预训练权重噪音 参考自： https://
 noise_lambda: 0.15 # 权重噪音超参
 
 # `````````````````````````数据相关`````````````````````````````
-force_reload_data: False # 是否强制重新处理数据，不使用preprocess_data_path加载
+force_reload_data: False # 是否强制重新处理数据，不使用pre process_data_path加载
 add_special_tokens_for_input: False # 是否在input_ids上添加tokenizer专属的开始和结束符号
 add_special_tokens_for_label: False # 是否在input_ids上添加tokenizer专属的开始和结束符号
 add_special_tokens_for_decoder_input: False # 是否在input_ids上添加tokenizer专属的开始和结束符号
-dataset: datsaet1 # 影响数据集的存放和保存地址
+dataset: 当前是默认配置，是不是忘了指定配置文件了？ # 影响数据集的存放和保存地址
 dataset_version: base  # 使用哪个版本的数据集预处理
+dataset_split:   # 适配各数据集的划分方式，如：random
+dataset_consumption: # 数据集的使用量，如果为小数则代表使用的比例，否则为数据条数，为空表示不限制
 dataset_processor: default # 使用哪个数据集
+custom_test_outputs:   # 是否使用自定义的测试输出，比如使用其他代码库抛出的结果使用本框架的评测代码
 tokenize_method: auto # auto, default(空格), nltk, jieba（中文），默认为auto将使用与预训练模型相匹配的tokenizer
 trainer_processor: base_trainer # 如果使用pl的trainer，文件名称请使用“pl_”开头
 data_mode: dial # dial, query, classification   可以对一个数据集设置多种数据输出格式
 dataloader_pin_memory: True # 数据集是否固定在内存中加快读取
-dataloader_num_workers: 1 # 数据集加载线程数
+dataloader_num_workers: 0 # 数据集加载线程数
 decoder_max_length: 128 # 解码器最长长度
 encoder_max_length: 128 # 编码器最长长度
 sent_max_length: 256 # 句子最长长度，适用于非 seq2seq 的 HF 模型数据预处理
@@ -117,6 +124,8 @@ train_batch_size: 8 # 训练集的batch大小
 valid_batch_size: 8 # 验证集的batch大小
 test_batch_size: 8 # 测试集的batch大小
 save_total_limit: 1 # 模型checkpoint保存的最大数量
+save_best_model: True # 是否保存最好的模型
+save_preprocess_data: True # 是否保存预处理后的数据
 dataset_part: # 具体加载哪些数据集（训练数据集、验证数据集、测试数据集）
   - train
   - valid
@@ -130,14 +139,19 @@ eval_metrics: # 测试时计算的评价指标
   - nlg_eval
   - ppl
   - sent_bleu
+  - hf_google_bleu
   - corpus_bleu
-  - sacrebleu
+  - sacrebleu_huggingface
+  - sacrebleu_sent
+  - sacrebleu_corpus
   - dist
   - meteor
   - rouge
-  - bert_score # 要求Dataset中含有‘generated’和‘bert_score_reference’两个列
-  - f1 # 要求Dataset中含有‘generated’和‘f1_reference’两个列
+  - bert_score  # 要求Dataset中含有‘generated’和‘bert_score_reference’两个列
+  - f1_space_split  # 要求Dataset中含有‘generated’和‘f1_reference’两个列
+  - f1_nlp_split  # 要求Dataset中含有‘generated’和‘f1_reference’两个列
   - charf
+  - hf_charf
   - q_squared
 
 model_hyparameters:
@@ -150,6 +164,8 @@ max_generation_length: 128
 min_generation_length: 3
 generate_method: oracle # nucleus, oracle, greedy, 如果使用oracle那么就会使用预训练模型自带的generate方法
 num_return_sequences: 1
+repetition_penalty: 1.0
+decoder_start_token:
 # `````````````````````````callback相关````````````````````````````
 checkpoint_monitor: val_loss
 checkpoint_monitr_mode: min
@@ -188,14 +204,16 @@ pl_train_args:
   auto_lr_find: True
   fast_dev_run: ${fast_run}
   log_every_n_steps: ${log_steps}
+#  amp_backend: apex
+  precision: 32
 
 # Section 其他
 hydra:
   run:
-    dir: ${logger_project}/logs/hydra_configs/${now:%Y-%m-%d}/${run_notes}_${base_identifier_str}
+    dir: ${logger_project}/logs/hydra_configs/${now:%Y-%m-%d}/${comet_name}_${base_identifier_str}
   sweep:
     dir: ${logger_project}/logs/hydra_configs/multiruns/${base_identifier_str}
-    subdir: ${run_notes}
+    subdir: ${comet_name}
 
 # pretty print config at the start of the run using Rich library
 print_config: True

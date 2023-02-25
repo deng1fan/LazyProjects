@@ -2,9 +2,9 @@
 ###
 # @Author: Deng Yifan 553192215@qq.com
 # @Date: 2022-08-19 14:09:34
-# @LastEditors: appleloveme 52270975+appleloveme@users.noreply.github.com
-# @LastEditTime: 2022-10-28 21:23:01
-# @FilePath: /dg_templete/run.sh
+# @LastEditors: appleloveme 553192215@qq.com
+# @LastEditTime: 2022-12-06 22:43:43
+# @FilePath: /codes_frame/run.sh
 # @Description:
 #
 # Copyright (c) 2022 by Deng Yifan 553192215@qq.com, All Rights Reserved.
@@ -66,6 +66,9 @@ ADD_COLOR "\n###################################################################
 base_path=$(pwd)
 export PYTHONPATH=$base_path
 read -p "请输入要运行的实验项目名称：" project_name
+#read -p "使用的后台运行命令：1、Tmux；2、Nohup（输入序号，为空则默认为 Tmux）" background_task
+#if [[ ${background_task =~ ""  ]]; then
+#  background_task=1
 exps=(`cat configs/experiments/$project_name/experimental_plan.yaml | shyaml keys experiments`)
 
 exps_num=${#exps[@]}  # 实验数量
@@ -74,22 +77,24 @@ run_num=0  # 已经运行的实验数量
 
 ADD_COLOR "\n本次计划实验共有：$exps_num 个\n" yellow
 
+day_time=$(date "+%Y_%m_%d")
+hour_time=$(date "+%H_%M_%S")
+
+experiment_plan_id=$day_time-$hour_time
+
 for exp in ${exps[@]};
 do
     run_num=$((run_num+1))
-    ADD_COLOR "🎬🎬🎬   $run_num、 启动 $exp 实验！  🎬🎬🎬" green
-    
-    # 参数解释
-    # >覆盖，
-    # >>追加
-    # 2>&1 表示不仅命令行正常的输出保存到log中，产生错误信息的输出也保存到log文件中
-    day_time=$(date "+%Y-%m-%d")
-    hour_time=$(date "+%H-%M-%S")
-    
-    # 获取配置文件中的参数
     config_name=`cat configs/experiments/$project_name/experimental_plan.yaml | shyaml get-value 'experiments.'$exp'.config_name'`
+    memo=`cat configs/experiments/$project_name/experimental_plan.yaml | shyaml get-value 'experiments.'$exp'.hyper_params.memo'`
+    ADD_COLOR "🎬🎬🎬   $run_num、 启动 $exp 实验！  🎬🎬🎬" green
+    ADD_COLOR "实验备注：$memo" pink
+    ADD_COLOR "实验配置文件：$config_name" pink
+
+    # 获取配置文件中的参数
     exp_keys=`cat configs/experiments/$project_name/experimental_plan.yaml | shyaml keys 'experiments.'$exp`
     config_keys=`cat configs/experiments/$config_name.yaml | shyaml keys`
+    default_config_keys=`cat configs/default_config.yaml | shyaml keys`
     sweep_args=""
     if [[ ${exp_keys[@]}  =~ "hyper_params"  ]]; then
         hyper_params=`cat configs/experiments/$project_name/experimental_plan.yaml | shyaml keys 'experiments.'$exp'.hyper_params'`
@@ -103,59 +108,64 @@ do
                 sub_sweep_args=$hyper_param_key"=\\\""$hyper_param_value"\\\""
             fi
             if [[ $config_keys =~ $hyper_param_key ]]; then
-                sweep_args=$sweep_args$sub_sweep_args" "
+                sweep_args=$sweep_args${sub_sweep_args//" "/""}" "
             else
-                sweep_args=$sweep_args"+"$sub_sweep_args" "
+                if [[ $default_config_keys =~ $hyper_param_key ]]; then
+                    sweep_args=$sweep_args${sub_sweep_args//" "/""}" "
+                else
+                    sweep_args=$sweep_args"+"${sub_sweep_args//" "/""}" "
+                fi
             fi
         done
     fi
-    
-    # 获取实验说明
-    # run_notes=$exp
-    proc_title=""
-    experiment="+experiments="$config_name
-    ADD_COLOR "Using experiment: "$experiment pink
-    # run_notes=$(cat configs/experiments/$config_name.yaml | shyaml get-value run_notes)
-    proc_title=$(cat configs/experiments/$config_name.yaml | shyaml get-value proc_title)
-    
-    ADD_COLOR "run_notes: "$exp pink
-    ADD_COLOR "proc_title: "$proc_title pink
-    
-    ADD_COLOR "$exp使用的超参数如下：" pink
-    all_args=$sweep_args"fast_run=False use_gpu=True wait_gpus=True force_reload_data=True logger=comet "$experiment
-    ADD_COLOR "$all_args" pink
-    
-    # 使用 tmux 启动实验
-    tmux_session=${exp//" "/"--"}-$day_time-$hour_time
-    tmux new-session -d -s $tmux_session
-    ADD_COLOR "tmux session name: "${exp//" "/"--"}-$day_time-$hour_time pink
-    SEND_KEYS "cd "$base_path $tmux_session
-    SEND_KEYS C-m $tmux_session
-    SEND_KEYS "conda activate lightning" $tmux_session
-    SEND_KEYS C-m $tmux_session
-    SEND_KEYS C-m $tmux_session
-    run_command="python run.py "$sweep_args" run_notes=$exp fast_run=False use_gpu=True wait_gpus=True force_reload_data=True logger=comet "$experiment
-    
-    SEND_KEYS "$run_command" $tmux_session
-    SEND_KEYS C-m $tmux_session
-    
+
+experiment="+experiments="$config_name
+
+############################################################################################################
+#    使用 tmux 启动实验
+#    tmux_session=${exp//" "/"--"}-$day_time-$hour_time
+#    tmux new-session -d -s $tmux_session
+#    ADD_COLOR "tmux session name: "${exp//" "/"--"}-$day_time-$hour_time pink
+#    SEND_KEYS "cd "$base_path $tmux_session
+#    SEND_KEYS C-m $tmux_session
+#    SEND_KEYS "conda activate lightning" $tmux_session
+#    SEND_KEYS C-m $tmux_session
+#    SEND_KEYS C-m $tmux_session
+#    see_log="tmux a -t $tmux_session"
+#    run_command="python run.py $sweep_args +tmux_session=$tmux_session +experiment_plan_id=$experiment_plan_id see_log=$see_log comet_name=$exp fast_run=False use_gpu=True wait_gpus=True force_reload_data=True logger=comet "$experiment
+#
+#    SEND_KEYS "$run_command" $tmux_session
+#    ADD_COLOR "启动命令:" pink
+#    ADD_COLOR "python run.py $sweep_args +tmux_session=$tmux_session +experiment_plan_id=$experiment_plan_id comet_name=$exp fast_run=False use_gpu=True wait_gpus=True force_reload_data=True logger=comet "$experiment pink
+#    ADD_COLOR "使用 $see_log 命令查看实验进度"
+#    ADD_COLOR "使用 tmux kill-session -t $tmux_session 命令结束实验" pink
+#    SEND_KEYS C-m $tmux_session
+############################################################################################################
+
+############################################################################################################
+#   使用 nohup 启动
+    cd $base_path
+    tmux_session="None"
+    see_log="$base_path/nohups/${exp//" "/"--"}_$day_time_$hour_time.out"
+    run_command="python run.py $sweep_args +tmux_session=$tmux_session +experiment_plan_id=$experiment_plan_id  +see_log=\"$see_log\" comet_name=$exp fast_run=False use_gpu=True wait_gpus=True force_reload_data=True logger=comet "$experiment
+    run_command=${run_command//"\\"/""}
+    ADD_COLOR "启动命令:" pink
+    ADD_COLOR "nohup $run_command > nohups/${exp//" "/"--"}_$day_time_$hour_time.out 2>&1 &" pink
+    ADD_COLOR "可使用下面命令打开 nohup 日志：" pink
+    ADD_COLOR "tail -f $base_path/nohups/${exp//" "/"--"}_$day_time_$hour_time.out" pink
+    ADD_COLOR "使用 Ctrl + C 命令退出日志（不会终止实验）" pink
+    nohup $run_command > nohups/${exp//" "/"--"}_$day_time_$hour_time.out 2>&1 &
+############################################################################################################
+
     # 防止误占 GPU
     if [ $run_num -lt $exps_num ]; then
-        ADD_COLOR "等待 5 秒钟，防止误占 GPU ......" red
-        sleep 5
+        ADD_COLOR "等待 15 秒钟，防止误占 GPU ......" red
+        sleep 15
     fi
     ADD_COLOR "" red
 done
 
+
+
 ADD_COLOR "\n🎉🎉🎉    实验计划已经全部启动！后续请关注 Comet.ml 和 钉钉 获取最新动态！       🎉🎉🎉\n" yellow
-
-ADD_COLOR "📍📍📍  Tips: " blue
-ADD_COLOR "👉👉👉  使用 tmux a -t [session_name] 命令查看实验进度！                   👈👈👈" blue
-ADD_COLOR "👉👉👉  使用 tmux kill-session -a -t [session_name] 命令结束指定实验！     👈👈👈" blue
-ADD_COLOR "👉👉👉  使用 tmux ls 命令查看所有实验！                                    👈👈👈" blue
-ADD_COLOR "👉👉👉  使用 tmux kill-session -a 命令结束所有实验！                       👈👈👈" blue
-# ADD_COLOR "👉👉👉  关注 Comet 和 钉钉 获取实验最新动态!                                👈👈👈" blue
 ADD_COLOR "" blue
-
-
-

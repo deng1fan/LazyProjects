@@ -24,7 +24,8 @@ import requests
 class StanfordCoreNLP:
     def __init__(self, path_or_host="stanford-corenlp-4.5.1", port=None, memory='4g', lang='en', timeout=1500, quiet=True,
                  logging_level=logging.WARNING):
-        path_or_host = os.getcwd() + f"/general_files/utils/others/stanford_nlp/{path_or_host}"
+        if not path_or_host.startswith('http'):
+            path_or_host = os.getcwd() + f"/general_files/utils/others/stanford_nlp/{path_or_host}"
         self.path_or_host = path_or_host
         self.port = port
         self.memory = memory
@@ -39,7 +40,10 @@ class StanfordCoreNLP:
         self._check_args()
 
         if path_or_host.startswith('http'):
-            self.url = path_or_host + ':' + str(port)
+            if port is None:
+                self.url = path_or_host
+            else:
+                self.url = path_or_host + ':' + str(port)
             logging.info('Using an existing server {}'.format(self.url))
         else:
 
@@ -109,14 +113,14 @@ class StanfordCoreNLP:
 
             self.url = 'http://localhost:' + str(self.port)
 
-        # Wait until server starts
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        host_name = urlparse(self.url).hostname
-        time.sleep(1)  # OSX, not tested
-        while sock.connect_ex((host_name, self.port)):
-            logging.info('Waiting until the server is available.')
-            time.sleep(1)
-        logging.info('The server is available.')
+            # Wait until server starts
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            host_name = urlparse(self.url).hostname
+            time.sleep(1)  # OSX, not tested
+            while not sock.connect_ex((host_name, self.port)):
+                logging.info('Waiting until the server is available.')
+                time.sleep(1)
+            logging.info('The server is available.')
 
     def __enter__(self):
         return self

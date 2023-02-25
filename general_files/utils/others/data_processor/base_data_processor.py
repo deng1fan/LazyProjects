@@ -1,6 +1,8 @@
 from datasets import Dataset
 import general_files.utils.common_util as utils
-from general_files.utils.data_util import print_dataset_overview
+from general_files.utils.data_util import print_dataset_overview, read_by
+import os
+import random
 
 log = utils.get_logger(__name__)
 
@@ -15,8 +17,35 @@ class BaseProcessor:
             "faith_dial": f"{config.public_data_path}/faith_dial",
             "qrecc": f"{config.public_data_path}/qrecc",
             "persona_chat": f"{config.public_data_path}/persona_chat",
+            "wow_faithdial": f"{config.public_data_path}/wow_faithdial",
         }
         self.public_dataset_path = self.get_public_data_path()
+        
+    def read_data(self, stage):
+        random.seed(self.config.seed)
+        data_ckpt_version = self.config.dataset_version
+        data_ckpt_split = '_' + \
+            self.config.get("dataset_split") if self.config.get(
+                "dataset_split") else ''
+        data_path = f"{self.public_dataset_path}/preprocessed_data_{data_ckpt_version}{data_ckpt_split}"
+        if not os.path.exists(data_path + ".pt"):
+            all_rows = self.preprocess_data(data_path)[stage]
+        else:
+            all_rows = read_by(data_path + ".pt", f"预处理的{stage}数据集")[stage]
+        if self.config.fast_run:
+            all_rows = all_rows[:4]
+        else:
+            # 限制数据集大小，方便小批量测试
+            if self.config.get("dataset_consumption") and stage != "test" and self.config.get("dataset_consumption") != 1:
+                if self.config.dataset_consumption < 1:
+                    all_rows = random.choices(all_rows, k=int(len(all_rows) * self.config.dataset_consumption))
+                else:
+                    all_rows = random.choices(all_rows, k=int(self.config.dataset_consumption))
+                    
+        return self.get_rows(all_rows, stage)
+    
+    def data_process(self, data, stage, *args, **kargs):
+        return data
         
     def get_public_data_path(self):
         return self.dataset_public_path_map[self.config.dataset]
@@ -86,18 +115,12 @@ class BaseProcessor:
             if test_data_tokenized is not None else None
 
         print_dataset_overview(train_data_tokenized, valid_data_tokenized, test_data_tokenized)
-        return train_data_tokenized, valid_data_tokenized, test_data_tokenized, raw_data
+        return train_data_tokenized, valid_data_tokenized, test_data_tokenized, raw_data, self.tokenizer
 
     def tokenize_data(self, batch, stage=None):
         pass
 
     def map_column(self, dataset):
-        raise NotImplementedError
-
-    def read_data(self, stage):
-        """
-        读取数据，根据stage【train、valid、test】获取对应的数据集
-        """
         raise NotImplementedError
 
     def get_segment_offset(self, offset_mapping, segments, target):

@@ -1,19 +1,6 @@
-'''
-Author: D-Yifan 553192215@qq.com
-Date: 2022-10-18 10:57:28
-LastEditors: D-Yifan 553192215@qq.com
-LastEditTime: 2022-10-23 10:28:13
-FilePath: general_files/models/hf_custom.py
-Description: 
-
-Copyright (c) 2022 by D-Yifan 553192215@qq.com, All Rights Reserved. 
-'''
 import torch
-import torch.nn as nn
 from general_files.models.pl_base_model import BasePLModel
-from rich.console import Console
 from general_files.utils.common_util import Result
-from pytorch_lightning.utilities import rank_zero_only
 import importlib
 
 class ModelNet(BasePLModel):
@@ -33,16 +20,17 @@ class ModelNet(BasePLModel):
             self.backbone = processor_class.from_pretrained(pretrain_model,
                                                             cache_dir=self.config.cache_dir,
                                                             hyparam=config,
-                                                            tokenizer=tokenizer,)
+                                                            tokenizer=tokenizer, )
             self.backbone.resize_token_embeddings(self.tokenizer.vocab_size)
             self.backbone = self.backbone.train()
         else:
             self.model_type = self.model_mode[config.hf_model_type if not as_pipeline else config.pipline_model_type]
-            self.backbone = self.init_pretrained_model(self.model_type)  # 实例化对象
-    
+            self.backbone = self.init_pretrained_model(self.model_type, as_pipeline)  # 实例化对象
+
         if self.config.get("use_param_noise", False):
             for name, para in self.backbone.named_parameters():
-                self.backbone.state_dict()[name][:] += (torch.rand(para.size()) - 0.5) * config.noise_lambda * torch.std(para)
+                self.backbone.state_dict()[name][:] += (torch.rand(
+                    para.size()) - 0.5) * config.noise_lambda * torch.std(para)
 
     def forward(self,
                 # batch, seq_len
@@ -64,14 +52,26 @@ class ModelNet(BasePLModel):
                                 use_cache=True,
                                 **other_features,
                                 )
-        if self.stage == 'train':
-            loss = outputs[0]
-            result.add(loss=loss)
+        lm_logits = outputs[0]
+
+        if len(self.config.get("loss")) < 1:
+            raise Exception("请至少选择一个损失函数！")
+        loss = 0
+        ###############################################
+        # 计算交叉熵损失
+        ###############################################
+        if "lm_loss" in self.config.get("loss") and labels is not None:
             result.add(labels=labels)
-            if isinstance(outputs[-1], Result):
-                model_result = outputs[-1]
-                result.merge_or_update(model_result)
+            lm_loss = self.CrossEntropyLoss(logits=lm_logits, labels=labels)
+            result.add(lm_loss=lm_loss)
+            loss += lm_loss
+
+        if self.stage == "train" and (
+                loss != loss or isinstance(loss, int)
+        ):
+            raise Exception("Loss为Nan或无梯度，请先检查数据正确性！")
+
+        result.add(loss=loss)
         return result
 
 
-   

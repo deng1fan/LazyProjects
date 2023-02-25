@@ -1,0 +1,45 @@
+# @package _global_
+
+#defaults:
+#  - override hydra/hydra_logging: colorlog
+#  - override hydra/job_logging: colorlog
+#  - _self_
+
+# script_path 提供的脚本用于将第三方的生成结果转换为标准格式
+# 格式支持 datasets.Dataset、pandas.DataFrame、Dict 三种类型
+# 列名必需包含 generated_seqs（generated） 和 reference，不同的评价指标对列名有不同的要求，详见评价指标的相关注释
+# 使用相对路径
+# 如：script_path: custom_test_outputs/transformers
+# 或：script_path: custom_test_outputs/transformers.py
+script_path: custom_test_outputs.data_transformer
+
+use_gpu: True  # 是否使用 GPU
+
+# 评价指标
+eval_metrics:
+#  - nlg_eval
+#  - hf_ppl
+  - sent_bleu
+#  - hf_google_bleu
+#  - corpus_bleu
+#  - hf_sacrebleu
+  - sacrebleu_sent
+  - sacrebleu_corpus
+#  - dist
+#  - meteor
+#  - rouge
+  - hf_rouge
+  - bert_score # 要求Dataset中含有‘generated’和‘bert_score_reference’两个列
+#  - hf_bert_score # 要求Dataset中含有‘generated’和‘bert_score_reference’两个列
+#  - f1_space_split # 要求Dataset中含有‘generated’和‘f1_reference’两个列
+  - f1_nlp_split
+#  - charf
+#  - faithdial_critic
+#  - hf_chrf
+#  - q_squared
+
+
+
+hydra:
+  run:
+    dir: custom_test_outputs/logs/${now:%Y-%m-%d}

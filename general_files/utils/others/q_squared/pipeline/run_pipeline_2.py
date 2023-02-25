@@ -380,3 +380,162 @@ def add_baseline_e2e_nli(response, knowledge):
 
 
 
+def calc_scores(response, knowledge, gen_method='beam', single=True, remove_personal=True):
+    # q_scores = []
+    #
+    # all_questions = []
+    # all_cands = []
+    # all_answers = []
+    # all_scores = []
+    # all_responses = []
+    # all_knowledge = []
+    # ids = []
+    # qg_tokenizer = AutoTokenizer.from_pretrained("mrm8488/t5-base-finetuned-question-generation-ap")
+    # qg_model = AutoModelForSeq2SeqLM.from_pretrained("mrm8488/t5-base-finetuned-question-generation-ap")#.to("cuda:0")
+    # qa_tokenizer = AutoTokenizer.from_pretrained("ktrapeznikov/albert-xlarge-v2-squad-v2")
+    # qa_model = AutoModelForQuestionAnswering.from_pretrained("ktrapeznikov/albert-xlarge-v2-squad-v2")#.to("cuda:0")
+    # for idx, resp in enumerate(tqdm(response, desc="计算中")):
+    #     res, res_questions, res_cands, res_answers, res_scores =\
+    #         get_response_score(resp, knowledge[idx], gen_method, single, remove_personal, qg_model, qg_tokenizer, qa_model, qa_tokenizer)
+    #
+    #     all_questions.extend(res_questions)
+    #     all_cands.extend(res_cands)
+    #     all_answers.extend(res_answers)
+    #     all_scores.extend(res_scores)
+    #     all_responses.extend([resp] * len(res_questions))
+    #     all_knowledge.extend([knowledge[idx]] * len(res_questions))
+    #     ids.extend([idx] * len(res_questions))
+    #
+    #     if res == INVALID_QUESTION:
+    #         all_questions.extend([NO_VALID_QUESTIONS])
+    #         all_cands.extend([NO_VALID_QUESTIONS])
+    #         all_answers.extend([NO_VALID_QUESTIONS])
+    #         all_scores.extend([INVALID_QUESTION])
+    #         all_responses.extend([resp.lower()])
+    #         all_knowledge.extend([knowledge[idx]])
+    #         ids.extend([idx])
+    #
+    #     q_scores.append(res)
+    # qg_model = qg_model.to("cpu")
+    # qa_model = qa_model.to("cpu")
+    # data = {'id': ids, 'response': all_responses, 'cand': all_cands, 'question': all_questions, 'knowledge': all_knowledge,
+    #         'knowledge_ans': all_answers, 'score': all_scores}
+    # torch.save(data, '/home/dengyf/code/faith_dial/general_files/utils/q_squared/third_party/data.pt')
+    data = torch.load('/home/dengyf/code/faith_dial/general_files/utils/q_squared/third_party/data.pt')
+    all_scores = data['score']
+    all_answers = data['knowledge_ans']
+    all_questions = data['question']
+    all_cands = data['cand']
+    ids = data['id']
+    from allennlp.predictors.predictor import Predictor
+    from allennlp_models import pretrained
+    predictor = pretrained.load_predictor("/home/dengyf/snli-roberta.2021-03-11.tar.gz")
+    # predictor = Predictor.from_path(
+    #     "/home/dengyf/snli-roberta.2021-03-11.tar.gz",
+    #     # "https://storage.googleapis.com/allennlp-public-models/snli-roberta.2021-03-11.tar.gz",
+    #     predictor_name="textual_entailment")
+    # if save_steps:
+    #     data = {'id': ids, 'response': all_responses, 'cand': all_cands, 'question': all_questions, 'knowledge': all_knowledge,
+    #             'knowledge_ans': all_answers, 'score': all_scores}
+    #     steps_df = pd.DataFrame(data=data)
+    #     steps_df.to_csv(out_path + '.steps.csv')
+    import subprocess
+    q2_score, q2_no_nli = scores_with_nli(all_scores, all_answers, all_questions, all_cands, response, knowledge, predictor)
+    Q2_nli, Q2_f1 = aggregate_per_response(q2_no_nli, q2_score, ids)
+
+    # valid_scores = [s for s in q_scores if s != -1]
+    # print("total with at least 1 valid question:", len(valid_scores))
+    # print("score:", np.mean(valid_scores))
+    print("Q2_nli:", str(Q2_nli))
+    print("Q2_f1:", str(Q2_f1))
+
+    return valid_scores
+
+
+if __name__ == '__main__':
+    from datasets import Dataset
+    ds = Dataset.from_csv("/home/dengyf/code/faith_dial/general_files/utils/q_squared/third_party/data/dodeca_consistent.csv")
+    calc_scores(ds['response'], ds['knowledge'])
+
+
+# def calc_scores(in_path, gen_method, single, remove_personal, out_path='', save_steps=False):
+#     print(in_path, gen_method, single, remove_personal)
+#     print(save_steps, flush=True)
+#     q_scores = []
+#     df = pd.read_csv(in_path)
+#
+#     all_questions = []
+#     all_cands = []
+#     all_answers = []
+#     all_scores = []
+#     all_responses = []
+#     all_knowledge = []
+#     ids = []
+#
+#     for idx, row in tqdm(df.iterrows()):
+#         res, res_questions, res_cands, res_answers, res_scores =\
+#             get_response_score(row['response'], row['knowledge'], gen_method, single, remove_personal)
+#
+#         all_questions.extend(res_questions)
+#         all_cands.extend(res_cands)
+#         all_answers.extend(res_answers)
+#         all_scores.extend(res_scores)
+#         all_responses.extend([row['response']] * len(res_questions))
+#         all_knowledge.extend([row['knowledge']] * len(res_questions))
+#         ids.extend([idx] * len(res_questions))
+#
+#         if res == INVALID_QUESTION:
+#             all_questions.extend([NO_VALID_QUESTIONS])
+#             all_cands.extend([NO_VALID_QUESTIONS])
+#             all_answers.extend([NO_VALID_QUESTIONS])
+#             all_scores.extend([INVALID_QUESTION])
+#             all_responses.extend([row['response'].lower()])
+#             all_knowledge.extend([row['knowledge']])
+#             ids.extend([idx])
+#
+#         q_scores.append(res)
+#
+#     if out_path != '':
+#         df['Q2'] = q_scores
+#         df = df[df.Q2 >= 0]
+#         df.to_csv(out_path + '.csv')
+#
+#     if save_steps:
+#         data = {'id': ids, 'response': all_responses, 'cand': all_cands, 'question': all_questions, 'knowledge': all_knowledge,
+#                 'knowledge_ans': all_answers, 'score': all_scores}
+#         steps_df = pd.DataFrame(data=data)
+#         steps_df.to_csv(out_path + '.steps.csv')
+#
+#     valid_scores = [s for s in q_scores if s != -1]
+#     print("total with at least 1 valid question:", len(valid_scores))
+#     print("score:", np.mean(valid_scores))
+#
+#     return valid_scores
+#
+#
+# if __name__ == '__main__':
+#     parser = argparse.ArgumentParser()
+#     parser.add_argument("--infile", type=str, default="/home/dengyf/code/faith_dial/general_files/utils/q_squared/third_party/data/dodeca_inconsistent.csv",
+#                         help="Path to a csv file containing dialogue model outputs.")
+#     parser.add_argument("--gen_method", type=str, default="beam", choices=['greedy', 'beam', 'sampling'],
+#                         help="Decoding method for question generation.")
+#     parser.add_argument("--q_per_cand", type=str, choices=['single', 'multi'], default='single', required=False,
+#                         help="Take only one question per candidate when using beam/sampling for decoding")
+#     parser.add_argument("--personal", type=str, choices=['keep', 'remove'], default='remove', required=False,
+#                         help="Whether to remove personal questions.")
+#     parser.add_argument("--outfile", type=str, default='', required=False, help="Path to an output file")
+#     parser.add_argument("--save_steps", default=False, action="store_true", help="Whether to save all pipeline steps")
+#     args = parser.parse_args()
+#
+#     if args.q_per_cand == 'single':
+#         single_q = True
+#     else:
+#         single_q = False
+#
+#     if args.personal == 'remove':
+#         rm_personal = True
+#     else:
+#         rm_personal = False
+#
+#     calc_scores(args.infile, args.gen_method, single=single_q, remove_personal=rm_personal,
+#                 out_path=args.outfile, save_steps=args.save_steps)

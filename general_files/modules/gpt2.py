@@ -87,7 +87,7 @@ class CustomModel(GPT2PreTrainedModel):
             if isinstance(kwargs[k], torch.Tensor) and k.startswith("decoder_"):
                 other_features[k] = self.expand_custom_inputs(kwargs[k])
             else:
-                # TODO 待将普通数组进行扩充
+                # todo 待将普通数组进行扩充
                 other_features[k] = kwargs[k]
         
         return {

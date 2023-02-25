@@ -1,21 +1,20 @@
 """
-Author: D-Yifan 553192215@qq.com
+Author: appleloveme 553192215@qq.com
 Date: 2022-08-19 15:06:33
-LastEditors: D-Yifan 553192215@qq.com
+LastEditors: appleloveme 553192215@qq.com
 LastEditTime: 2022-10-16 20:40:12
-FilePath: general_files/modules/pipeline.py
+FilePath: /faith_dial/general_files/modules/pipeline.py
 Description: 
 
-Copyright (c) 2022 by D-Yifan 553192215@qq.com, All Rights Reserved. 
+Copyright (c) 2022 by appleloveme 553192215@qq.com, All Rights Reserved. 
 """
 import torch.nn as nn
 import torch
 from general_files.utils.common_util import (
     set_config_gpus,
-    init_context
+    init_context,
+    RedisClient,
 )
-from transformers import pipeline
-
 
 class Pipeline(nn.Module):
     def __init__(self, config):
@@ -59,3 +58,12 @@ class Pipeline(nn.Module):
             for sent in generated_ids
         ]
         return generated_sentences
+
+    def done(self):
+        self.model = self.model.to("cpu")
+        ###############################################
+        # 删除Redis的Gpu占用记录
+        ###############################################
+        if self.config.task_id:
+            redis_client = RedisClient()
+            redis_client.deregister_gpus(self.config)

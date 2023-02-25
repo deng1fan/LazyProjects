@@ -1,9 +1,9 @@
 import math
-from typing import Any, List
+from typing import Any, List, Dict
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from pytorch_lightning.utilities import rank_zero_only
+from pytorch_lightning.utilities import rank_zero_info
 from torch.nn import functional as F
 from transformers import (
     AdamW,
@@ -61,6 +61,7 @@ class BasePLModel(pl.LightningModule):
         }
 
     def training_step(self, batch: Any, batch_idx: int):
+        self.stage = 'train'
         outputs = self(**batch)
         if outputs['loss'] != outputs['loss']:
             raise Exception("Loss为Nan，请先检查数据正确性！")
@@ -85,6 +86,7 @@ class BasePLModel(pl.LightningModule):
         }
 
     def validation_step(self, batch: Any, batch_idx: int):
+        self.stage = 'valid'
         outputs = self(**batch)
         self.log("val/step_loss", outputs['loss'], prog_bar=False)
         return {"val_step_loss": outputs['loss']}
@@ -180,27 +182,30 @@ class BasePLModel(pl.LightningModule):
         for name, value in layer.named_parameters():
             value.requires_grad = False
 
-    def init_pretrained_model(self, pretrained_model_class, freeze=False, only_structure=None):
+    def init_pretrained_model(self, pretrained_model_class, as_pipeline=False, freeze=False, only_structure=None):
         """
         初始化预训练模型并调整模型词表大小
         :param pretrained_model_class:
         :return: Model
         """
-        config = AutoConfig.from_pretrained(
-            self.config.pretrain_model,
-            cache_dir=self.config.cache_dir,
-            **self.config.model_hyparameters if self.config.model_hyparameters else {}
-        )
-        model = pretrained_model_class.from_config(config)
+        if self.config.stage in ["test", "finetune"]:
+            if ".ckpt" in self.config.ckpt_path:
+                pretrain_model_path = self.config.pretrain_model
+            else:
+                pretrain_model_path = self.config.ckpt_path + "/best_model"
+        elif as_pipeline and self.config.get("pipline_ckpt"):
+            pretrain_model_path = self.config.work_dir + "/logs/" + self.config.pipline_ckpt + "/best_model"
+        else:
+            pretrain_model_path = self.config.pretrain_model.split(":")[-1]
+            
+        model = pretrained_model_class.from_pretrained(pretrain_model_path,
+                                                       cache_dir=self.config.cache_dir,
+                                                       **self.config.model_hyparameters if self.config.model_hyparameters else {})
+        
         only_structure = only_structure if only_structure is not None else self.config.only_structure
         if only_structure:
-            model.resize_token_embeddings(self.tokenizer.vocab_size)
             model.init_weights()
-        else:
-            model = model.from_pretrained(self.config.pretrain_model.split(":")[-1],
-                                          config=config,
-                                          cache_dir=self.config.cache_dir)
-            model.resize_token_embeddings(self.tokenizer.vocab_size)
+        model.resize_token_embeddings(self.tokenizer.vocab_size)
         if freeze:
             self.freeze_weights(model)
         model = model.train()

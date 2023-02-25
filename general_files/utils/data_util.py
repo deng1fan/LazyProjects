@@ -20,148 +20,149 @@ import itertools
 import logging
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
+import importlib
 
 # 英文表达常见缩写
 CONJUNCTIONS_WORDS_MAP = {
-    "isn't": "is not",
-    "Isn't": "Is not",
-    "wasn't": "was not",
-    "Wasn't": "Was not",
-    "aren't": "are not",
-    "Aren't": "Are not",
-    "weren't": "were not",
-    "haven't": "have not",
-    "Haven't": "Have not",
-    "hasn't": "has not",
-    "Hasn't": "Has not",
-    "hadn't": "had not",
-    "won't": "will not",
-    "Won't": "Will not",
-    "wouldn't": "would not",
-    "don't": "do not",
-    "Don't": "Do not",
-    "doesn't": "does not",
-    "Doesn't": "Does not",
-    "didn't": "did not",
-    "Didn't": "Did not",
-    "can't": "can not",
-    "Can't": "Can not",
-    "couldn't": "could not",
-    "Couldn't": "Could not",
-    "shouldn't": "should not",
-    "mightn't": "might not",
-    "mustn't": "must not",
-    "i'm": "i am",
-    "I'm": "I am",
-    "you're": "you are",
-    "he's": "he is",
-    "she's": "she is",
-    "it's": "it is",
-    "It's": "It is",
-    "we're": "we are",
-    "We're": "We are",
-    "they're": "they are",
-    "They're": "They are",
-    "i've": "i have",
-    "I've": "I have",
-    "you've": "you have",
-    "You've": "You have",
-    "we've": "we have",
-    "We've": "We have",
-    "they've": "they have",
-    "They've": "They have",
-    "i'd": "i would",
-    "I'd": "I would",
-    "you'd": "you would",
-    "You'd": "You would",
-    "he'd": "he would",
-    "He'd": "He would",
-    "she'd": "she would",
-    "She'd": "She would",
-    "we'd": "we would",
-    "We'd": "We would",
-    "they'd": "they would",
-    "i'll": "i will",
-    "I'll": "I will",
-    "you'll": "you will",
-    "he'll": "he will",
-    "she'll": "she will",
-    "we'll": "we will",
-    "We'll": "We will",
-    "they'll": "they will",
-    "They'll": "They will",
-    "isnt": "is not",
-    "Isnt": "Is not",
-    "wasnt": "was not",
-    "arent": "are not",
-    "werent": "were not",
-    "havent": "have not",
-    "hasnt": "has not",
-    "hadnt": "had not",
-    "wont": "will not",
-    "wouldnt": "would not",
-    "dont": "do not",
-    "doesnt": "does not",
-    "didnt": "did not",
-    "cant": "can not",
-    "couldnt": "could not",
-    "shouldnt": "should not",
-    "mightnt": "might not",
-    "mustnt": "must not",
-    "There's": "There is",
-    "there's": "there is",
-    "There're": "There are",
-    "there're": "there are",
-    "What's": "What is",
-    "what's": "what is",
-    "What're": "What are",
-    "what're": "what are",
-    "Who's": "Who is",
-    "who's": "who is",
-    "Who're": "Who are",
-    "who're": "who are",
-    "Where's": "Where is",
-    "where's": "where is",
-    "Where're": "Where are",
-    "where're": "where are",
-    "How's": "How is",
-    "how's": "how is",
-    "How're": "How are",
-    "how're": "how are",
-    "I'ma": "I am going to",
-    "I'lla": "I will",
-    "we're": "we are",
-    "We're": "We are",
-    "they're": "they are",
-    "They're": "They are",
-    "When's": "When is",
-    "when's": "when is",
-    "Let's": "Let us",
-    "let's": "let us",
-    "Who've": "Who have",
-    "who've": "who have",
-    "My name's": "My name is",
-    "my name's": "my name is",
-    "Your name's": "Your name is",
-    "your name's": "your name is",
-    "His name's": "His name is",
-    "his name's": "his name is",
-    "Her name's": "Her name is",
-    "her name's": "her name is",
-    "Its name's": "Its name is",
-    "its name's": "its name is",
-    "Our name's": "Our name is",
-    "our name's": "our name is",
-    "Their name's": "Their name is",
-    "their name's": "their name is",
-    "What're": "What are",
-    "what're": "what are",
-    "What've": "What have",
-    "what've": "what have",
-    "What'll": "What will",
-    "what'll": "what will",
-    "What'd": "What did",
-    "what'd": "what did",
+ " isn't ": " is not ",
+ "Isn't ": "Is not ",
+ " wasn't ": " was not ",
+ "Wasn't ": "Was not ",
+ " aren't ": " are not ",
+ "Aren't ": "Are not ",
+ " weren't ": " were not ",
+ " haven't ": " have not ",
+ "Haven't ": "Have not ",
+ " hasn't ": " has not ",
+ "Hasn't ": "Has not ",
+ " hadn't ": " had not ",
+ " won't ": " will not ",
+ "Won't ": "Will not ",
+ " wouldn't ": " would not ",
+ " don't ": " do not ",
+ "Don't ": "Do not ",
+ " doesn't ": " does not ",
+ "Doesn't ": "Does not ",
+ " didn't ": " did not ",
+ "Didn't ": "Did not ",
+ " can't ": " can not ",
+ "Can't ": "Can not ",
+ " couldn't ": " could not ",
+ "Couldn't ": "Could not ",
+ " shouldn't ": " should not ",
+ " mightn't ": " might not ",
+ " mustn't ": " must not ",
+ " i'm ": " i am ",
+ "I'm ": "I am ",
+ " you're ": " you are ",
+ " he's ": " he is ",
+ " she's ": " she is ",
+ " it's ": " it is ",
+ "It's ": "It is ",
+ " we're ": " we are ",
+ "We're ": "We are ",
+ " they're ": " they are ",
+ "They're ": "They are ",
+ " i've ": " i have ",
+ "I've ": "I have ",
+ " you've ": " you have ",
+ "You've ": "You have ",
+ " we've ": " we have ",
+ "We've ": "We have ",
+ " they've ": " they have ",
+ "They've ": "They have ",
+ " i'd ": " i would ",
+ "I'd ": "I would ",
+ " you'd ": " you would ",
+ "You'd ": "You would ",
+ " he'd ": " he would ",
+ "He'd ": "He would ",
+ " she'd ": " she would ",
+ "She'd ": "She would ",
+ " we'd ": " we would ",
+ "We'd ": "We would ",
+ " they'd ": " they would ",
+ " i'll ": " i will ",
+ "I'll ": "I will ",
+ " you'll ": " you will ",
+ " he'll ": " he will ",
+ " she'll ": " she will ",
+ " we'll ": " we will ",
+ "We'll ": "We will ",
+ " they'll ": " they will ",
+ "They'll ": "They will ",
+ " isnt ": " is not ",
+ "Isnt ": "Is not ",
+ " wasnt ": " was not ",
+ " arent ": " are not ",
+ " werent ": " were not ",
+ " havent ": " have not ",
+ " hasnt ": " has not ",
+ " hadnt ": " had not ",
+ " wont ": " will not ",
+ " wouldnt ": " would not ",
+ " dont ": " do not ",
+ " doesnt ": " does not ",
+ " didnt ": " did not ",
+ " cant ": " can not ",
+ " couldnt ": " could not ",
+ " shouldnt ": " should not ",
+ " mightnt ": " might not ",
+ " mustnt ": " must not ",
+ "There's ": "There is ",
+ " there's ": " there is ",
+ "There're ": "There are ",
+ " there're ": " there are ",
+ "What's ": "What is ",
+ " what's ": " what is ",
+ "What're ": "What are ",
+ " what're ": " what are ",
+ "Who's ": "Who is ",
+ " who's ": " who is ",
+ "Who're ": "Who are ",
+ " who're ": " who are ",
+ "Where's ": "Where is ",
+ " where's ": " where is ",
+ "Where're ": "Where are ",
+ " where're ": " where are ",
+ "How's ": "How is ",
+ " how's ": " how is ",
+ "How're ": "How are ",
+ " how're ": " how are ",
+ "I'ma ": "I am going to ",
+ "I'll ": "I will ",
+ " we're ": " we are ",
+ "We're ": "We are ",
+ " they're ": " they are ",
+ "They're ": "They are ",
+ "When's ": "When is ",
+ " when's ": " when is ",
+ "Let's ": "Let us ",
+ " let's ": " let us ",
+ "Who've ": "Who have ",
+ " who've ": " who have ",
+ "My name's ": "My name is ",
+ " my name's ": " my name is ",
+ " Your name's ": " Your name is ",
+ " your name's ": " your name is ",
+ "His name's ": "His name is ",
+ " his name's ": " his name is ",
+ "Her name's ": " Her name is ",
+ " her name's ": " her name is ",
+ "Its name's ": "Its name is ",
+ " its name's ": " its name is ",
+ "Our name's ": "Our name is ",
+ " our name's ": " our name is ",
+ "Their name's ": "Their name is ",
+ " their name's ": " their name is ",
+ "What're ": "What are ",
+ " what're ": " what are ",
+ "What've ": "What have ",
+ " what've ": " what have ",
+ "What'll ": "What will ",
+ " what'll ": " what will ",
+ "What'd ": "What did ",
+ " what'd ": " what did ",
 
 }
 
@@ -194,6 +195,22 @@ log = get_logger(__name__)
 @rank_zero_only
 def pp(input_obj):
     pprint.pprint(input_obj)
+
+
+def get_custom_test_output(config):
+    module_path = config.script_path
+    
+    processor_name = 'transform'
+    try:
+        module = importlib.import_module(module_path)
+    except ModuleNotFoundError as r:
+        raise ValueError(
+            f"请在此位置添加 data_transformer.py : {module_path}.")
+    except Exception as r:
+        raise Exception('未知错误 %s' % r)
+    processor_class = getattr(module, processor_name)
+    
+    return processor_class(config)
 
 
 def get_tokenized_data(config, tokenizer, only_test=False):
@@ -253,7 +270,7 @@ def print_dataset_overview(
 
 def read_by(path, data_name=""):
     """读取文件，根据文件后缀名自动选择读取方法
-        目前支持保存类型有：‘pkl’、‘txt’、‘pt’、‘json’, 'jsonl'
+        目前支持保存类型有：‘pkl’、‘txt’、‘pt’、‘json’, 'jsonl'、'csv'
 
     Args:
         data_name: str, 打印提示时需要，便于控制台查看保存的文件是什么文件, 默认为空
@@ -286,6 +303,8 @@ def read_by(path, data_name=""):
             if item == "":
                 continue
             data.append(item)
+    elif ".csv" in path:
+        data = pd.read_csv(path)
     log.info(f"成功加载 {data_name}!")
     return data
 
@@ -332,7 +351,6 @@ def save_as(data, save_path, file_format="pt", data_name="", protocol=4):
         raise Exception(f"请添加针对{file_format}类型文件的保存方法！")
     log.info(f"保存 {data_name} 成功!")
     return None
-
 
 
 def read_txt_by_line(file_path, data_name=None):
@@ -503,7 +521,7 @@ def print_sample_data(
     experiment=None,
 ):
     console = Console(color_system="256", style="cyan")
-    show_columns = ["input_ids", "labels"]
+    show_columns = ["input_ids", "labels", "decoder_input_ids"]
     log_data = {}
     for i, data_tokenized in enumerate(data_tokenized_list):
         if data_tokenized is None:
@@ -660,7 +678,7 @@ def rfind_list(input_list, target):
     """
     return len(input_list) - input_list[-1::-1].index(target) - 1
 
-# 绘制箱线图
+
 def xxt(data):
     plt.boxplot(
         x=data,  # 指定绘图数据
@@ -688,6 +706,7 @@ class DataModule(pl.LightningDataModule):
             self.train_dataset,
             batch_size=self.config.train_batch_size,
             shuffle=True,
+            drop_last=True,
             pin_memory=self.config.dataloader_pin_memory,
             num_workers=self.config.dataloader_num_workers,
             collate_fn=self.collate_fn,
@@ -698,6 +717,7 @@ class DataModule(pl.LightningDataModule):
             self.eval_dataset,
             batch_size=self.config.train_batch_size,
             shuffle=True,
+            drop_last=True,
             pin_memory=self.config.dataloader_pin_memory,
             num_workers=self.config.dataloader_num_workers,
             collate_fn=self.collate_fn,

@@ -1,0 +1,39 @@
+# 实验计划
+# 示例：
+# experiments:
+#   exp_1:
+#      config_name: sent_control/faith_dial/t5/bow/bow
+#      hyper_params:
+#         memo: test
+#         proc_title: test
+
+# config_name：指定配置文件
+# hyper_params【可选】：指定超参数
+#
+# ❗️❗️❗️  注意！  ❗️❗️❗️
+# 1、实验计划中的变量字符串不可包含特殊字符、空格等，最好使用下划线或其他不会造成转义的字符
+# 2、实验计划中的config_name需要使用绝对路径，即从 configs/experiments 开始的路径
+# 3、实验计划中的config_name不需要包含文件后缀名
+# 4、实验计划中的 exp_1 可以随意命名，此字段会自动覆盖配置文件中的 comet_name 字段
+# 5、如不需要运行某个实验，可将某个实验计划注释掉
+# 6、实验计划中的变量字符串会自动覆盖配置文件中的同名变量
+# 7、config_name 和 hyper_params.memo 两个字段是必须的，其他字段可根据需要自行添加
+
+experiments:
+
+  ###############################################
+  # 📍📍📍 测试用 DEMO，使用 T5 模型在 faith_dial 数据集上进行训练
+  ###############################################
+  baseline测试1:
+    config_name: exp_demo/baseline
+    hyper_params:
+      memo: 测试实验 1
+      train_batch_size: 4
+
+  baseline测试2:
+    config_name: exp_demo/baseline
+    hyper_params:
+      memo: 测试实验 2
+      train_batch_size: 2
+
+  

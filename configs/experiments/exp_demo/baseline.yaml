@@ -1,0 +1,111 @@
+# @package _global_
+
+# Section 关于GPU、CPU的设置
+# use_gpu: False
+# visible_cuda:
+#   - 7
+
+# Section 关于实验的标记
+# logger: comet  # 如果不想上传可以为空，默认为空
+logger_project: exp_demo
+comet_name: exp_demo  # 对本次实验的简短描述
+memo: T5_DEMO  # 对本次实验的详细描述，可以用来记录本次实验的具体细节和改动
+proc_title: ${comet_name} # 修改后的进程名
+
+# Section 关于数据、模型的保存和加载
+# `````````````````````````模型加载相关`````````````````````````````
+# fast_run: False  # 快速运行整个训练和测试过程，便于查找bug
+
+pretrain_model: t5-base # 除了影响到模型加载，还会影响到使用预训练模型的tokenizer还是自定义的tokenizer
+stage: train # test, train, finetune
+ckpt_identifier:
+
+# `````````````````````````数据相关```````````````````````````````
+dataset: wow # 影响数据集的存放和保存地址
+dataset_version: base # 使用哪个版本的数据集预处理
+dataset_processor: base
+dataset_split: topic
+model_processor: base:hf_seq2seq_base # 如果使用general_files中的基础模型，需要以“base:”开头，如果使用pl框架，model_processor名需包含“pl.”
+
+force_reload_data: False # True, False # 是否强制重新处理数据，不使用preprocess_data_path加载
+decoder_max_length: 128 # 解码器最长长度
+encoder_max_length: 256 # 编码器最长长度
+
+train_batch_size: 8 # 训练集的batch大小
+valid_batch_size: 8 # 验证集的batch大小
+test_batch_size: 8 # 测试集的batch大小
+
+save_total_limit: 0
+save_best_model: False # 是否保存最好的模型
+save_preprocess_data: False # 是否保存预处理后的数据
+
+# `````````````````````````特殊设置`````````````````````````````
+input_shape: k-h
+target_shape: r
+history_len: 3
+loss: lm_loss
+
+additional_special_tokens:
+  - <user>
+  - <bot>
+  - <low-prec>
+  - <med-prec>
+  - <high-prec>
+  - <non-entailed>
+  - <neutral>
+  - <entailed>
+  - <no-first-person>
+  - <first-person>
+  - <knowledge>
+  - <high_know>
+  - <use_know>
+  - <no_know>
+  - <control>
+  - <:>
+
+# Section 关于训练相关的参数
+eval_metrics:
+  - nlg_eval
+  # - hf_ppl
+  - sent_bleu
+#  - hf_google_bleu
+  - corpus_bleu
+#  - hf_sacrebleu
+  - sacrebleu_sent
+  - sacrebleu_corpus
+  - dist
+  - meteor
+  - rouge
+  - hf_rouge
+  - bert_score # 要求Dataset中含有‘generated’和‘bert_score_reference’两个列
+#  - hf_bert_score # 要求Dataset中含有‘generated’和‘bert_score_reference’两个列
+  - f1_space_split # 要求Dataset中含有‘generated’和‘f1_reference’两个列
+  - f1_nlp_split
+  - charf
+#  - hf_chrf
+#  - q_squared
+
+# `````````````````````````模型生成相关````````````````````````````
+temperature: 1.0
+beam_size: 1
+top_k: 8
+top_p: 0.6
+max_generation_length: 128
+
+# `````````````````````````训练流程相关````````````````````````````
+max_epochs: 10
+lr: 6.25e-5
+scheduler: linear # linear, constant, cosine， cosine_w_restarts， polynomial
+adafactor: False # 使用AdaFactor还是AdamW优化器
+weight_decay: 0.0
+warmup_ratio: 0.04 # 优先级高于warmup_steps
+warmup_steps: 200
+dropout: 0.2
+
+# `````````````````````````特殊参数````````````````````````````
+
+# Section 关于trainer的特定参数
+pl_train_args:
+  auto_lr_find: False # True, False
+  gradient_clip_algorithm: norm
+  gradient_clip_val: 3.5

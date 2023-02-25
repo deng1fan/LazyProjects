@@ -1,4 +1,5 @@
 import logging
+import comet_ml
 import random
 import copy
 import warnings
@@ -9,7 +10,8 @@ import rich.syntax
 import rich.tree
 import torch
 import transformers
-from omegaconf import DictConfig, OmegaConf
+from pathlib import Path
+from omegaconf import DictConfig, OmegaConf, ListConfig
 from pytorch_lightning.utilities import rank_zero_only, rank_zero_info
 from rich.console import Console
 from rich.progress import (
@@ -49,7 +51,6 @@ import hmac
 import hashlib
 import base64
 import urllib
-import comet_ml
 import requests
 from nvitop import select_devices
 import yaml
@@ -99,7 +100,7 @@ def get_logger(name=__name__, level=logging.INFO) -> logging.Logger:
         datefmt="%m/%d/%Y %H:%M:%S",
         level=logging.INFO,
     )
-    
+
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
@@ -125,38 +126,50 @@ log = get_logger(__name__)
 def pp(text):
     rank_zero_info(text)
 
+
 def init_comet_experiment(config):
     experiment = None
     if config.logger and config.logger == "comet":
         log.info("Initializing comet experiment...")
-        comet_ml.init(
-            project_name=config.logger_project,
-            experiment_key=config.experiment_key,
-        )
-        experiment = comet_ml.Experiment(
-            log_git_patch=True,
-            log_git_metadata=True,
-            auto_histogram_tensorboard_logging=True,
-            display_summary_level=0,
-            log_code=True,
-            auto_histogram_weight_logging=True,
-        )
+        comet_ml.init()
+        experiment = comet_ml.Experiment(api_key=config.comet_api_key)
         experiment_config = sys.argv[-1].replace("+experiments=", "")
+        tmux_session = "未使用 Tmux"
+        for arg in sys.argv:
+            if "tmux_session" in arg:
+                tmux_session = arg.replace("+tmux_session=", "")
         experiment_hyper_args = " ".join(sys.argv[1:])
         experiment.set_name(config.comet_name)
         experiment.add_tag(config.stage)
-        experiment.log_other("备注", config.run_notes)
+        experiment.log_other("备注", config.memo)
+        experiment.log_other("tmux_session", tmux_session)
+        experiment.log_other("experiment_plan_id", config.experiment_plan_id)
+        experiment.log_other("max_epochs", config.max_epochs)
+        experiment.log_other("数据集", config.dataset)
+        experiment.log_other("预训练模型", config.pretrain_model)
         experiment.log_other("实验标识", config.task_full_name)
+        experiment.log_other("损失函数", '、'.join(config.loss))
         experiment.log_other("进程ID", str(os.getpid()))
         experiment.log_other("config", experiment_config)
         experiment.log_other("experiment_hyper_args", experiment_hyper_args)
+
+        devices = "cpu"
+        if config.get("visible_cuda"):
+            devices = []
+            for cuda in config.get("visible_cuda"):
+                devices.append(
+                    str(Device.cuda.from_cuda_indices(cuda)[0].physical_index))
+            devices = ", ".join(devices)
+
+        experiment.log_other("设备", devices)
         # 设置上传代码文件
         # 上传config
         experiment.log_asset(
             config.config_dir + "/experiments/" + experiment_config + ".yaml"
         )
         experiment.log_asset(config.config_dir + "/default_config.yaml")
-        experiment.log_asset(config.config_dir + "/experimental_plan.yaml")
+        experiment.log_asset(
+            config.config_dir + f"/experiments/{config.logger_project}/experimental_plan.yaml")
         # 上传数据处理文件
         experiment.log_asset(
             config.work_dir
@@ -181,17 +194,8 @@ def init_comet_experiment(config):
                 config.logger_project + ".modules." + sub_model_processor_name
             )
             sub_module_path = sub_module_path.replace(".", "/")
-            experiment.log_asset(config.root_dir + "/" + sub_module_path + ".py")
-        for key in config.keys():
-            if isinstance(config[key], DictConfig) or isinstance(
-                config[key], OmegaConf
-            ):
-                for key2 in config[key].keys():
-                    experiment.log_other(
-                        f"{str(key)}:{str(key2)}", config[key][key2]
-                    )
-            else:
-                experiment.log_other(str(key), config[key])
+            experiment.log_asset(config.root_dir + "/" +
+                                 sub_module_path + ".py")
     return experiment
 
 
@@ -218,20 +222,13 @@ def init_context(config, as_pipeline=False, init_data=True):
     ###############################################
     # 初始化分词器
     ###############################################
-    if config.ckpt_path and os.path.exists(config.ckpt_path + "/tokenizer.pt"):
-        # 微调、测试的分词器加载
-        tokenizer = read_by(config.ckpt_path + "/tokenizer.pt", data_name="tokenizer")
-    elif as_pipeline and config.pipline_ckpt:
-        # 微调、测试的分词器加载
-        tokenizer = read_by(config.pipline_ckpt + "/tokenizer.pt", data_name="pipeline tokenizer")
-    else:
-        log.info("初始化分词器")
-        tokenizer_module_path = "general_files.modules.tokenizer"
-        tokenizer_module = importlib.import_module(tokenizer_module_path)
-        tokenizer = getattr(tokenizer_module, "Tokenizer")
-        tokenizer = tokenizer(config=config)
-        tokenizer.add_special_tokens(list(config.additional_special_tokens))
-        
+    log.info("初始化分词器")
+    tokenizer_module_path = "general_files.modules.tokenizer"
+    tokenizer_module = importlib.import_module(tokenizer_module_path)
+    tokenizer = getattr(tokenizer_module, "Tokenizer")
+    tokenizer = tokenizer(config=config)
+    tokenizer.add_special_tokens(list(config.additional_special_tokens))
+
     ###############################################
     # 初始化数据
     ###############################################
@@ -266,11 +263,11 @@ def init_context(config, as_pipeline=False, init_data=True):
                 valid_data_tokenized,
                 test_data_tokenized,
                 raw_data,
-            ) = get_tokenized_data(config=config, tokenizer=tokenizer, only_test=only_test)
+                tokenizer) = get_tokenized_data(config=config, tokenizer=tokenizer, only_test=only_test)
             if config.eval_bad_case_analysis:
                 log.info(f"使用验证集作为测试集，进行Bad case生成分析！")
                 test_data_tokenized = valid_data_tokenized
-            if not config.fast_run and config.stage in ["train", "finetune", "pretrain"]:
+            if not config.fast_run and config.get("save_preprocess_data"):
                 log.info(
                     f"保存数据集缓存...: {config.result_path}/preprocess_dataset.pt"
                 )
@@ -287,15 +284,12 @@ def init_context(config, as_pipeline=False, init_data=True):
 
     if not as_pipeline:
         config.vocab_size = len(tokenizer)
-        if config.ckpt_path:
-            tokenizer_output_path = config.ckpt_path
-        else:
-            tokenizer_output_path = config.result_path
-        log.info(f"保存分词器...: {config.result_path}")
-        save_as(tokenizer, tokenizer_output_path + "/tokenizer", data_name="tokenizer")
+        save_path = Path(config.result_path).joinpath("best_model")
+        tokenizer.save_pretrained(save_path)
 
-    # 初始化模型
-    # 使用pytorch lightning框架
+    ###############################################
+    # 📍📍📍 初始化模型
+    ###############################################
     model_name = (
         config.pretrain_model
         if config.pretrain_model is not None
@@ -303,32 +297,9 @@ def init_context(config, as_pipeline=False, init_data=True):
     )
     log.info(f"初始化模型...: {model_name}")
     model = processor_class(config, tokenizer, as_pipeline)  # 实例化对象
-    if config.stage in ["test", "finetune"] or (
-        as_pipeline and config.get("pipline_ckpt")
-    ):
-        if as_pipeline:
-            ckpt_path = config.work_dir + "/logs/" + config.pipline_ckpt
-        else:
-            ckpt_path = config.ckpt_path
-        # pytorch lightning框架在测试和微调时加载模型权重
-        log.info(f"加载来自 {ckpt_path} 的权重！")
-        if ".ckpt" in ckpt_path:
-            model = model.load_from_checkpoint(
-                ckpt_path,
-                config=config,
-                tokenizer=tokenizer,
-                strict=False,
-            )
-        else:
-            model = model.load_from_checkpoint(
-                ckpt_path + "/best_model.ckpt",
-                config=config,
-                tokenizer=tokenizer,
-                strict=False,
-            )
-    
+
     print_parameters(model)
-    
+
     if init_data:
         return (
             model,
@@ -374,7 +345,8 @@ def print_config(
     """
 
     style = "cyan"
-    tree = rich.tree.Tree("CONFIG", style=style, highlight=True, guide_style=style)
+    tree = rich.tree.Tree("CONFIG", style=style,
+                          highlight=True, guide_style=style)
 
     for field in fields:
         branch = tree.add(field, style=style, guide_style=style)
@@ -402,27 +374,35 @@ def check_config(config: DictConfig):
     if config.ignore_warnings:
         warnings.filterwarnings("ignore")
 
+    config.lr = float(config.lr)
+    
+    config.dataset_processor = config.dataset + '.' + config.dataset_processor
+
     config.cache_dir = config.cache_dir + config.pretrain_model.split(":")[-1]
-    config.comet_name = f"{config.run_notes}"
+    task_save_name = config.comet_name
+
+    if config.get("loss"):
+        config.loss = config.loss.split("+")
 
     # 自动添加Multirun的搜索参数
     for arg in sys.argv:
         if "choice" in arg or "range" in arg:
             key = arg.split("=")[0]
             value = config[key]
-            config.comet_name += f"-->({key}={value})"
+            task_save_name += f"-->({key}={value})"
 
     if config.get("fast_run") and config.get("stage") == "test":
         config.fast_run = False
-    
+
     if config.get("fast_run") and config.get("stage") != "test":
         # 快速运行整个训练和测试流程，便于查找bug
-        config.comet_name = f"(fast_run)-->" + config.comet_name
+        task_save_name = f"(fast_run)__" + task_save_name
         config.pl_train_args.auto_lr_find = False
 
-    config.comet_name += f"-->{config.dataset}-->{config.pretrain_model}"
+    task_save_name += f"__{config.dataset}__{config.pretrain_model}"
 
-    config.task_full_name = f"{config.base_identifier_str}-->{config.comet_name}"
+    config.task_full_name = f"{config.base_identifier_str}__{task_save_name}"
+    config.task_full_name = config.task_full_name.replace("-", "_")
 
     if config.get("stage") == "test" and config.get("eval_bad_case_analysis"):
         config.dataset_part = ["valid", "test"]
@@ -447,7 +427,8 @@ def check_config(config: DictConfig):
         config.default_device = f"cpu"
         if not config.wait_gpus:
             if "auto_select_" not in str(config.visible_cuda):
-                gpus = config.visible_cuda.split(",")
+                gpus = config.visible_cuda.split(",") if not isinstance(
+                    config.visible_cuda, ListConfig) else config.visible_cuda
                 if isinstance(gpus, int):
                     config.want_gpu_num = 1
                     config.default_device = f"cuda:{gpus}"
@@ -480,7 +461,7 @@ class MyProgressCallback(transformers.TrainerCallback):
             self.progress, self.training_bar = get_progress_bar(
                 "Train", total_step=state.max_steps
             )
-            self.progress.start()  ## 开启
+            self.progress.start()  # 开启
         self.current_step = 0
 
     def on_step_begin(self, args, state, control, **kwargs):
@@ -627,7 +608,8 @@ class LiteProgressBar(pl.callbacks.progress.TQDMProgressBar):
 @rank_zero_only
 def print_parameters(model):
     total_num = sum(p.numel() for p in model.parameters())
-    trainable_num = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    trainable_num = sum(p.numel()
+                        for p in model.parameters() if p.requires_grad)
     _dict = {}
     for _, param in enumerate(model.named_parameters()):
         total_params = param[1].numel()
@@ -654,7 +636,7 @@ def print_parameters(model):
 
 
 @rank_zero_only
-def print_dict_to_table(input_dict, column1_name, column2_name, title, config):
+def print_dict_to_table(input_dict, column1_name, column2_name, title):
     console = Console(color_system="256", style="cyan")
     table = Table(style="cyan", show_footer=False, title=title)
     table.add_column(column1_name, justify="right", style="magenta")
@@ -662,12 +644,6 @@ def print_dict_to_table(input_dict, column1_name, column2_name, title, config):
     for k, v in input_dict.items():
         table.add_row(k, str(v))
     console.print(table)
-
-    # if not config.fast_run:
-    #     # 去除rich的格式修饰符
-    #     save_title_name = re.sub(r'\[.*\]', '', title)
-    #     with open(f"{config.result_path}/{save_title_name}.txt", "w") as fp:
-    #         rich.print(table, file=fp)
 
 
 @rank_zero_only
@@ -703,7 +679,7 @@ def print_generated_dialogs(test_output, show_num=5, mode="dial", config=None, e
             justify="center",
         )
 
-    if save_path and not config.fast_run:
+    if save_path:  # and not config.fast_run:
         test_output_df = pd.DataFrame(test_output)
         test_output_df = test_output_df.loc[:, save_columns]
         if ".ckpt" in save_path:
@@ -711,7 +687,6 @@ def print_generated_dialogs(test_output, show_num=5, mode="dial", config=None, e
         if not os.path.exists(save_path):
             os.mkdir(save_path)
         test_output_df.to_csv(save_path + "/test_output.csv")
-        test_output_df.to_excel(save_path + "/test_output.xlsx")
         generated = [str(s) + "\n" for s in test_output["generated_seqs"]]
         generated_with_special_tokens = [
             str(s) + "\n" for s in test_output["generated_seqs_with_special_tokens"]
@@ -730,34 +705,55 @@ def print_generated_dialogs(test_output, show_num=5, mode="dial", config=None, e
         )
         if experiment and config.logger == "comet":
             features_df = pd.DataFrame(features)
-            experiment.log_table(
-                tabular_data=features_df, filename="generated_" + mode + ".csv"
-            )
-            experiment.log_asset(
-                save_path + "/generated_" + mode + ".txt", file_name="generated_" + mode
-            )
-            experiment.log_asset(
-                save_path + "/generated_with_special_tokens_" + mode + ".txt",
-                file_name="generated_with_special_tokens_" + mode,
-            )
+            try:
+                experiment.log_table(
+                    tabular_data=features_df, filename="generated_" + mode + ".csv"
+                )
+            except Exception as e:
+                print_error_info(e)
+                log.info("上传 generated_" + mode + ".csv 失败")
+            try:
+                experiment.log_asset(
+                    save_path + "/generated_" + mode + ".txt", file_name="generated_" + mode
+                )
+            except Exception as e:
+                print_error_info(e)
+                log.info("上传 generated_" + mode + ".txt 失败")
+            try:
+                experiment.log_asset(
+                    save_path + "/generated_with_special_tokens_" + mode + ".txt",
+                    file_name="generated_with_special_tokens_" + mode,
+                )
+            except Exception as e:
+                print_error_info(e)
+                log.info("上传 generated_with_special_tokens_" + mode + ".txt 失败")
+
             log.info(
                 f"已将生成结果:generated_{mode}、generated_with_special_tokens_{mode}保存到comet!"
             )
             ###############################################
             # 推送到钉钉
             ###############################################
-            run_name = config.task_full_name.replace("/", "--")
-            send_msg_to_DingTalk_and_wx("正在上传生成结果！！！🎉🎉🎉", config)
-            send_file_to_DingTalk(
-                save_path + "/test_output.xlsx", f"生成结果__{run_name}.xlsx"
-            )
-            send_file_to_DingTalk(
-                save_path + "/generated_" + mode + ".txt", f"生成句子__{run_name}.txt"
-            )
-            send_file_to_DingTalk(
-                save_path + "/generated_with_special_tokens_" + mode + ".txt",
-                f"带特殊符的生成句子__{run_name}.txt",
-            )
+            try:
+                if config.send_result_file_to_dingding:
+                    run_name = config.task_full_name.replace("/", "--")
+                    send_file_to_DingTalk(
+                        save_path +
+                        "/test_output.xlsx", f"生成结果__{run_name}.xlsx"
+                    )
+                    send_file_to_DingTalk(
+                        save_path + "/generated_" + mode +
+                        ".txt", f"生成句子__{run_name}.txt"
+                    )
+                    send_file_to_DingTalk(
+                        save_path + "/generated_with_special_tokens_" + mode + ".txt",
+                        f"带特殊符的生成句子__{run_name}.txt",
+                    )
+                    send_msg_to_DingTalk_and_wx(
+                        f"{config.comet_name} 模型生成结果 ☝️☝️☝️", config)
+            except Exception as e:
+                print_error_info(e)
+                log.info("推送文件到钉钉失败！")
 
 
 def switch_color(color=None):
@@ -897,7 +893,8 @@ class Result(dict):
         memo[d] = id(dict)
         for key in self.keys():
             dict.__setattr__(
-                copy.deepcopy(key, memo), copy.deepcopy(self.__getattr__(key), memo)
+                copy.deepcopy(key, memo), copy.deepcopy(
+                    self.__getattr__(key), memo)
             )
         return dict
 
@@ -906,8 +903,8 @@ class Result(dict):
 
 
 class CustomCometLoggerForPL(CometLogger):
-    def __init__(self):
-        super(CustomCometLoggerForPL, self).__init__()
+    def __init__(self, *args, **kwargs):
+        super(CustomCometLoggerForPL, self).__init__(*args, **kwargs)
 
     @rank_zero_only
     def finalize(self, status: str) -> None:
@@ -949,7 +946,8 @@ def dingtalk_sender_and_wx(
         see `secret`
 
     """
-    user_mentions = list([str(i) for i in global_config.dingding_msg_user_mentions])
+    user_mentions = list([str(i)
+                         for i in global_config.dingding_msg_user_mentions])
     msg_template = {
         "msgtype": "text",
         "text": {"content": ""},
@@ -969,7 +967,8 @@ def dingtalk_sender_and_wx(
         ).digest()
         sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
         encrypted_url = (
-            webhook_url + "&timestamp={}".format(timestamp) + "&sign={}".format(sign)
+            webhook_url +
+            "&timestamp={}".format(timestamp) + "&sign={}".format(sign)
         )
         return encrypted_url
 
@@ -994,17 +993,25 @@ def dingtalk_sender_and_wx(
             visible_cuda = str(args[0]["visible_cuda"])
             config = args[0]
             run_name = args[0]["comet_name"]
-            run_notes = args[0]["run_notes"]
+            comet_name = args[0]["comet_name"]
+            memo = args[0]["memo"]
+            tmux_session = ""
+            for arg in sys.argv:
+                if "tmux_session" in arg:
+                    tmux_session = arg.replace("+tmux_session=", "")
             if master_process:
                 contents = [
-                    f"{run_notes} 训练准备就绪，即将开始 🎬\n",
+                    f"{comet_name} 开始准备实验环境与数据，即将开始 🎬\n",
                     "机器名: %s\n" % host_name,
                     "使用显卡序号: %s\n" % visible_cuda,
                     "进程ID: %s\n" % str(os.getpid()),
                     "开始时间: %s\n" % start_time.strftime(DATE_FORMAT),
                     "run_name: %s\n" % run_name,
-                    "run_notes: %s\n" % run_notes,
+                    "comet_name: %s\n" % comet_name,
+                    "memo: %s\n" % memo,
                 ]
+                if tmux_session != "":
+                    contents.append("tmux_session: %s\n" % tmux_session)
 
                 wx_contents = contents
                 contents.extend(["@{}".format(i) for i in user_mentions])
@@ -1017,28 +1024,33 @@ def dingtalk_sender_and_wx(
                 else:
                     requests.post(webhook_url, json=msg_template)
                 if config.get("use_wechat"):
-                    send_wechat(config.run_notes, '\n'.join(wx_contents))
+                    send_wechat(config.comet_name, '\n'.join(wx_contents))
 
             try:
-                value = func(*args, **kwargs)
+                value, config = func(*args, **kwargs)
 
                 if master_process:
                     end_time = datetime.datetime.now()
                     elapsed_time = end_time - start_time
                     contents = [
-                        f"{run_notes} 训练已经完成！！！ 🎉\n",
+                        f"{comet_name} 训练已经完成！！！ 🎉\n",
                         "机器名: %s\n" % host_name,
-                        "使用显卡序号: %s\n" % visible_cuda,
+                        "使用显卡序号: %s\n" % ",".join([str(Device.cuda.from_cuda_indices(
+                            gpu)[0].physical_index) for gpu in list(config.visible_cuda)]),
                         "进程ID: %s\n" % str(os.getpid()),
                         "开始时间: %s\n" % start_time.strftime(DATE_FORMAT),
                         "结束时间: %s\n" % end_time.strftime(DATE_FORMAT),
                         "训练时长: %s\n" % str(elapsed_time),
                     ]
+                    
+                    if tmux_session != "":
+                        contents.append("tmux_session: %s\n" % tmux_session)
 
                     try:
                         str_value = "\n\n" + value.flatten_to_print()
                         contents.append("=====运行信息===== %s" % str_value)
-                    except:
+                    except Exception as e:
+                        print_error_info(e)
                         contents.append(
                             "=====运行信息=====\n %s"
                             % "ERROR - Couldn't str the returned value."
@@ -1057,39 +1069,36 @@ def dingtalk_sender_and_wx(
                         requests.post(webhook_url, json=msg_template)
                         pp(msg_template)
                 if config.get("use_wechat"):
-                    send_wechat(config.run_notes, '\n'.join(wx_contents))
-                return value
+                    send_wechat(config.comet_name, '\n'.join(wx_contents))
+                return value, config
 
             except Exception as ex:
                 end_time = datetime.datetime.now()
                 elapsed_time = end_time - start_time
                 contents = [
-                    f"啊哦！{run_notes} 训练遇到了一点问题 ☠️",
+                    f"啊哦！{comet_name} 训练遇到了一点问题 ☠️",
                     "机器名: %s" % host_name,
                     "使用显卡序号: %s" % visible_cuda,
                     "进程ID: %s\n" % str(os.getpid()),
                     "开始时间: %s" % start_time.strftime(DATE_FORMAT),
                     "崩溃时间: %s" % end_time.strftime(DATE_FORMAT),
                     "用时: %s\n\n" % str(elapsed_time),
-                    "错误信息:",
-                    "%s\n\n" % ex,
                     "错误回溯:",
                     "%s\n\n" % traceback.format_exc(),
+                    "错误信息:",
+                    "%s\n\n" % ex,
                     "run_name: %s\n" % run_name,
-                    "run_notes: %s\n" % run_notes,
+                    "comet_name: %s\n" % comet_name,
+                    "memo: %s\n" % memo,
                 ]
+                
+                if tmux_session != "":
+                    contents.append("tmux_session: %s\n" % tmux_session)
+                
                 wx_contents = contents
 
                 contents.extend(["@{}".format(i) for i in user_mentions])
                 contents.extend(keywords)
-                ###############################################
-                # 修改comet状态
-                ###############################################
-                # experiment = args[-1]
-                # if config.logger == "comet":
-                #     experiment.add_tag("Crashed")
-                #     experiment.set_name(config.comet_name + "  Error!")
-                #     experiment.end()
 
                 msg_template["text"]["content"] = "\n".join(contents)
                 if secret:
@@ -1099,7 +1108,7 @@ def dingtalk_sender_and_wx(
                     requests.post(webhook_url, json=msg_template)
                     pp(msg_template)
                 if config.get("use_wechat"):
-                    send_wechat(config.run_notes, '\n'.join(wx_contents))
+                    send_wechat(config.comet_name, '\n'.join(wx_contents))
                 raise ex
 
         return wrapper_sender
@@ -1130,9 +1139,10 @@ def send_msg_to_DingTalk_and_wx(msg, config):
         see `secret`
 
     """
-    webhook_url = global_config.dingding_msg_web_hook
-    secret = global_config.dingding_msg_secret
-    user_mentions = []
+    webhook_url = global_config.dingding_web_hook
+    secret = global_config.dingding_secret
+    user_mentions = list([str(i)
+                         for i in global_config.dingding_msg_user_mentions])
     msg_template = {
         "msgtype": "text",
         "text": {"content": ""},
@@ -1152,7 +1162,8 @@ def send_msg_to_DingTalk_and_wx(msg, config):
         ).digest()
         sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
         encrypted_url = (
-            webhook_url + "&timestamp={}".format(timestamp) + "&sign={}".format(sign)
+            webhook_url +
+            "&timestamp={}".format(timestamp) + "&sign={}".format(sign)
         )
         return encrypted_url
 
@@ -1170,6 +1181,11 @@ def send_msg_to_DingTalk_and_wx(msg, config):
     else:
         master_process = True
     visible_cuda = str(config["visible_cuda"])
+    
+    tmux_session = ""
+    for arg in sys.argv:
+        if "tmux_session" in arg:
+            tmux_session = arg.replace("+tmux_session=", "")
 
     try:
         if master_process:
@@ -1183,7 +1199,8 @@ def send_msg_to_DingTalk_and_wx(msg, config):
             try:
                 config_info = Result(
                     run_name=config.comet_name,
-                    run_notes=config.run_notes,
+                    comet_name=config.comet_name,
+                    memo=config.memo,
                 )
                 str_value = "\n\n" + config_info.flatten_to_print()
                 contents.append("=====运行信息===== %s" % str_value)
@@ -1191,6 +1208,9 @@ def send_msg_to_DingTalk_and_wx(msg, config):
                 contents.append(
                     "=====运行信息=====\n %s" % "ERROR - Couldn't str the returned value."
                 )
+                
+            if tmux_session != "":
+                contents.append("tmux_session: %s\n" % tmux_session)
 
             wx_contents = contents
 
@@ -1204,7 +1224,7 @@ def send_msg_to_DingTalk_and_wx(msg, config):
                 requests.post(webhook_url, json=msg_template)
                 pp(msg_template)
         if config.get("use_wechat"):
-            send_wechat(config.run_notes, '\n'.join(wx_contents))
+            send_wechat(config.comet_name, '\n'.join(wx_contents))
         return msg
 
     except Exception as ex:
@@ -1218,10 +1238,10 @@ def send_msg_to_DingTalk_and_wx(msg, config):
             "开始时间: %s" % start_time.strftime(DATE_FORMAT),
             "崩溃时间: %s" % end_time.strftime(DATE_FORMAT),
             "用时: %s\n\n" % str(elapsed_time),
-            "错误信息:",
-            "%s\n\n" % ex,
             "错误回溯:",
             "%s\n\n" % traceback.format_exc(),
+            "错误信息:",
+            "%s\n\n" % ex,
         ]
 
         wx_contents = contents
@@ -1231,7 +1251,8 @@ def send_msg_to_DingTalk_and_wx(msg, config):
         try:
             config_info = Result(
                 run_name=config.comet_name,
-                run_notes=config.run_notes,
+                comet_name=config.comet_name,
+                memo=config.memo,
             )
             str_value = "\n\n" + config_info.flatten_to_print()
             contents.append("=====运行信息===== %s" % str_value)
@@ -1248,7 +1269,7 @@ def send_msg_to_DingTalk_and_wx(msg, config):
             requests.post(webhook_url, json=msg_template)
             pp(msg_template)
         if config.get("use_wechat"):
-            send_wechat(config.run_notes, '\n'.join(wx_contents))
+            send_wechat(config.comet_name, '\n'.join(wx_contents))
         raise ex
 
 
@@ -1263,7 +1284,10 @@ def send_file_to_DingTalk(file_path, file_name):
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {"appkey": appkey, "appsecret": appsecret}
         r = requests.request("GET", url, data=data, headers=headers)
-        access_token = r.json()["access_token"]
+        json = r.json()
+        if "errmsg" in json and json['errmsg'] != 'ok':
+            raise Exception(json['errmsg'])
+        access_token = json["access_token"]
         return access_token
 
     def getMedia_id(file_path, file_name):
@@ -1277,6 +1301,8 @@ def send_file_to_DingTalk(file_path, file_name):
         data = {"access_token": access_token, "type": "file"}
         response = requests.post(url, files=files, data=data)
         json = response.json()
+        if "errmsg" in json and json['errmsg'] != 'ok':
+            raise Exception(json['errmsg'])
         return json["media_id"]
 
     access_token = getAccess_token()
@@ -1288,7 +1314,8 @@ def send_file_to_DingTalk(file_path, file_name):
         "chatid": global_config.dingding_file_chat_id,
         "msg": {"msgtype": "file", "file": {"media_id": media_id}},
     }
-    response = requests.request("POST", url, data=json.dumps(data), headers=header)
+    response = requests.request(
+        "POST", url, data=json.dumps(data), headers=header)
     if response.ok:
         log.info(f"已成功推送文件-->{file_name} 到钉钉！")
     else:
@@ -1305,9 +1332,8 @@ def send_wechat(title, msg):
 
 
 def print_gpu_info(gpus):
-    devices = Device.cuda.from_cuda_indices(
-        gpus
-    )  # or `Device.all()` to use NVML ordinal instead
+    # or `Device.all()` to use NVML ordinal instead
+    devices = Device.cuda.from_cuda_indices(gpus)
     separator = False
     for device in devices:
         processes = device.processes()  # type: Dict[int, GpuProcess]
@@ -1334,7 +1360,8 @@ def print_gpu_info(gpus):
         )
 
         if len(processes) > 0:
-            processes = GpuProcess.take_snapshots(processes.values(), failsafe=True)
+            processes = GpuProcess.take_snapshots(
+                processes.values(), failsafe=True)
             processes.sort(key=lambda process: (process.username, process.pid))
 
             print(
@@ -1389,6 +1416,10 @@ def print_gpu_info(gpus):
 
 def set_config_gpus(config):
     redis_client = RedisClient()
+    
+    self_occupied_gpus = redis_client.get_self_occupied_gpus()
+            
+
     if (
         config.use_gpu
         and isinstance(config.visible_cuda, str)
@@ -1402,9 +1433,8 @@ def set_config_gpus(config):
             min_free_memory=config.cuda_min_free_memory,
             max_memory_utilization=config.cuda_max_memory_utilization,
         )
-        self_occupied_gpus = redis_client.get_self_occupied_gpus()
         available_gpus = list(set(gpus) - self_occupied_gpus)
-        if len(available_gpus) > 0 and len(available_gpus) >= min_count:
+        if len(available_gpus) > 0 and len(available_gpus) >= min_count and len(self_occupied_gpus) < config.limit_the_amount_of_gpu_you_can_use:
             # 有足够可用GPU
             config.wait_gpus = False
             config.visible_cuda = available_gpus[:min_count]
@@ -1416,19 +1446,29 @@ def set_config_gpus(config):
             # 可用GPU不足
             if config.wait_gpus:
                 # 排队
-                config.task_id = redis_client.join_wait_queue(config)
+                config.task_id, wait_num = redis_client.join_wait_queue(config)
+                # 发送钉钉通知
+                try:
+                    send_msg_to_DingTalk_and_wx(
+                        f"{config.comet_name} 加入排队队列！前方还有{wait_num}个任务🚶🏻‍🧑🏻‍🦼🚶👩‍🦯👨🏻‍🦯", config)
+                except Exception as e:
+                    print_error_info(e)
+                    log.info(f"发送钉钉通知失败: {e}")
             else:
                 # 不排队
                 raise Exception("可用GPU数量不足，建议使用排队功能！")
     elif config.use_gpu:
         # 如果指定了GPU
-        reserve_gpus = config.visible_cuda
+        # 转换成相对索引
+        reserve_gpus = [i for i, _ in enumerate(config.visible_cuda)]
+        # reserve_gpus = config.visible_cuda
         min_count = len(reserve_gpus)
-        self_occupied_gpus = redis_client.get_self_occupied_gpus()
         gpu_all_free = True
         for gpu in reserve_gpus:
-            if gpu in self_occupied_gpus:
+            if Device.cuda.from_cuda_indices(gpu)[0].physical_index in self_occupied_gpus:
                 gpu_all_free = False
+        if len(self_occupied_gpus) >= config.limit_the_amount_of_gpu_you_can_use:
+            gpu_all_free = False
         if not config.wait_gpus and not gpu_all_free:
             raise Exception("指定GPU并未全部空闲，建议使用排队功能！")
         elif gpu_all_free:
@@ -1440,7 +1480,13 @@ def set_config_gpus(config):
             config.task_id = redis_client.register_gpus(config)
         else:
             # 排队
-            config.task_id = redis_client.join_wait_queue(config)
+            config.task_id, wait_num = redis_client.join_wait_queue(config)
+            # 发送钉钉通知
+            try:
+                send_msg_to_DingTalk_and_wx(f"{config.comet_name} 加入排队队列！前方还有{wait_num}个任务🚶🏻‍🧑🏻‍🦼🚶👩‍🦯👨🏻‍🦯", config)
+            except Exception as e:
+                print_error_info(e)
+                log.info(f"发送钉钉通知失败: {e}")
     else:
         # 使用CPU
         pass
@@ -1449,6 +1495,7 @@ def set_config_gpus(config):
     # 检查是否需要等待Gpu
     ###############################################
     while config.use_gpu and config.wait_gpus:
+        curr_time = str(time.strftime('%m月%d日 %H:%M:%S', time.localtime()))
         # 判断当前是否轮到自己
         if redis_client.is_my_turn(config):
             # 循环获取当前可用Gpu
@@ -1461,47 +1508,52 @@ def set_config_gpus(config):
                     max_memory_utilization=config.cuda_max_memory_utilization,
                 )
                 self_occupied_gpus = redis_client.get_self_occupied_gpus()
-                if not isinstance(config.visible_cuda, str):
-                    # 如果指定了GPU
-                    reserve_gpus = config.visible_cuda
-                    gpu_all_free = True
-                    for gpu in reserve_gpus:
-                        if gpu in self_occupied_gpus:
-                            gpu_all_free = False
-                    if gpu_all_free:
-                        available_gpus = reserve_gpus
+                
+                # 在不超出 GPU 使用数量限制下进行判断
+                if len(self_occupied_gpus) < config.limit_the_amount_of_gpu_you_can_use:
+                    if not isinstance(config.visible_cuda, str):
+                        # 如果指定了GPU
+                        reserve_gpus = [
+                            i for i, _ in enumerate(config.visible_cuda)]
+                        gpu_all_free = True
+                        for gpu in reserve_gpus:
+                            if Device.cuda.from_cuda_indices(gpu)[0].physical_index in self_occupied_gpus:
+                                gpu_all_free = False
+                        if gpu_all_free:
+                            available_gpus = reserve_gpus
+                        else:
+                            available_gpus = []
+                        min_count = len(reserve_gpus)
                     else:
-                        available_gpus = []
-                    min_count = len(reserve_gpus)
-                else:
-                    # 自动选择
-                    available_gpus = list(set(gpus) - self_occupied_gpus)
+                        # 自动选择
+                        available_gpus = list(set(gpus) - self_occupied_gpus)
 
-                if len(available_gpus) > 0 and len(available_gpus) >= min_count:
-                    # 自动选择，确认等待
-                    if (
-                        config.confirm_gpu_free
-                        and config.last_confirm_gpus == available_gpus[:min_count]
-                    ):
-                        # 如果满足条件退出循环
-                        log.info("发现足够可用GPU并二次确认成功！")
-                        config.wait_gpus = False
-                        config.visible_cuda = available_gpus[:min_count]
-                        config.want_gpu_num = len(config.visible_cuda)
-                        config.default_device = f"cuda:{config.visible_cuda[0]}"
-                        redis_client.pop_wait_queue(config)
-                        config.task_id = redis_client.register_gpus(config)
-                        break
-                    else:
-                        # 设置单次确认空闲
-                        log.info("发现足够可用GPU！即将进行二次确认！")
-                        config.confirm_gpu_free = True
-                        config.last_confirm_gpus = available_gpus[:min_count]
-                        redis_client.update_queue(config)
-                        time.sleep(30)
-                        continue
+                    if len(available_gpus) > 0 and len(available_gpus) >= min_count:
+                        # 自动选择，确认等待
+                        if (
+                            config.confirm_gpu_free
+                            and config.last_confirm_gpus == available_gpus[:min_count]
+                        ):
+                            # 如果满足条件退出循环
+                            log.info("发现足够可用GPU并二次确认成功！")
+                            config.wait_gpus = False
+                            config.visible_cuda = available_gpus[:min_count]
+                            config.want_gpu_num = len(config.visible_cuda)
+                            config.default_device = f"cuda:{config.visible_cuda[0]}"
+                            redis_client.pop_wait_queue(config)
+                            config.task_id = redis_client.register_gpus(config)
+                            break
+                        else:
+                            # 设置单次确认空闲
+                            log.info("\n发现足够可用GPU！即将进行二次确认！")
+                            config.confirm_gpu_free = True
+                            config.last_confirm_gpus = available_gpus[:min_count]
+                            redis_client.update_queue(config)
+                            time.sleep(30)
+                            continue
                 # 重置确认信息
-                log.info("当前无足够可用GPU，继续等待......")
+                print(f"\r{curr_time}: 当前无足够可用GPU，继续等待......",
+                      end='',  flush=True)
                 if config.confirm_gpu_free:
                     log.info("二次确认失败，继续等待......")
                 config.confirm_gpu_free = False
@@ -1514,15 +1566,16 @@ def set_config_gpus(config):
         else:
             # 排队ing......
             wait_num = len(redis_client.client.lrange("wait_queue", 0, -1)) - 1
-            log.info(f"正在排队中！ 前方还有 {wait_num} 个训练任务！")
+            print(f"\r{curr_time}: 正在排队中！ 前方还有 {wait_num} 个训练任务！",
+                  end='',  flush=True)
             time.sleep(60)
 
     if config.use_gpu:
         log.info("实验标识： " + config.task_full_name)
-        log.info("实验备注： " + config.run_notes)
+        log.info("实验备注： " + config.memo)
         log.info("正在搜集可用GPU信息")
         print_gpu_info(config.visible_cuda)
-    
+
     return config
 
 
@@ -1545,7 +1598,7 @@ class RedisClient:
             all_gpus = []
             for task in self_occupied_gpus.values():
                 gpus = [
-                    int(device) for device in json.loads(task)["use_gpus"].split(",")
+                    int(device) for device in str(json.loads(task)["cuda_devices"]).split(",")
                 ]
                 all_gpus.extend(gpus)
             return set(all_gpus)
@@ -1562,16 +1615,18 @@ class RedisClient:
             + "*"
             + str(int(time.mktime(time.strptime(creat_time, "%Y-%m-%d %H:%M:%S"))))
         )
+        cuda_devices = ','.join([str(cuda) for cuda in config.visible_cuda]) if isinstance(config.visible_cuda, list) else "auto"
         content = {
             "want_gpus": config.want_gpu_num,
+            "cuda_devices": cuda_devices,
             "create_time": creat_time,
             "update_time": creat_time,
             "system_pid": os.getpid(),
             "task_id": task_id,
-            "run_notes": config.run_notes,
             "run_name": config.comet_name,
             "comet_name": config.comet_name,
             "logger_project": config.logger_project,
+            "memo": config.memo,
         }
         wait_num = len(self.client.lrange("wait_queue", 0, -1))
         self.client.rpush("wait_queue", json.dumps(content))
@@ -1582,7 +1637,7 @@ class RedisClient:
         log.info(
             f"tips: 如果想要对任务进行调整可以移步Redis客户端进行数据修改，只建议进行修改 want_gpus 参数以及删除训练任务操作，其他操作可能会影响Redis读取的稳定性"
         )
-        return task_id
+        return task_id, wait_num
 
     def is_my_turn(self, config):
         """
@@ -1600,10 +1655,11 @@ class RedisClient:
             # 登记异常信息
             log.info("当前训练任务并不排在队列第一位，请检查Redis数据正确性！")
         curr_time = datetime.datetime.now()
-        update_time = datetime.datetime.strftime(curr_time, "%Y-%m-%d %H:%M:%S")
+        update_time = datetime.datetime.strftime(
+            curr_time, "%Y-%m-%d %H:%M:%S")
         task["update_time"] = update_time
         self.client.lset("wait_queue", 0, json.dumps(task))
-        log.info("更新训练任务时间戳成功！")
+        # log.info("更新训练任务时间戳成功！")
 
     def pop_wait_queue(self, config):
         """
@@ -1630,15 +1686,17 @@ class RedisClient:
             )
         else:
             task_id = config.task_id
+        
         content = {
-            "use_gpus": ",".join([str(gpu) for gpu in list(config.visible_cuda)]),
+            "use_gpus": config.want_gpu_num,
+            "cuda_devices": ",".join([str(Device.cuda.from_cuda_indices(gpu)[0].physical_index) for gpu in list(config.visible_cuda)]),
             "register_time": datetime.datetime.strftime(curr_time, "%Y-%m-%d %H:%M:%S"),
             "system_pid": os.getpid(),
             "task_id": task_id,
-            "run_notes": config.run_notes,
             "run_name": config.comet_name,
             "comet_name": config.comet_name,
             "logger_project": config.logger_project,
+            "memo": config.memo,
         }
         self.client.hset("self_occupied_gpus", task_id, json.dumps(content))
         log.info("成功登记Gpu使用信息到Redis服务器！")
@@ -1655,6 +1713,47 @@ class RedisClient:
         else:
             log.info("无法找到当前训练任务在Redis服务器上的Gpu使用信息！或许可以考虑检查一下Redis的数据 🤔")
 
+    def register_process(self, config):
+        """
+        将当前训练任务登记到进程信息中
+        """
+        curr_time = datetime.datetime.now()
+        creat_time = datetime.datetime.strftime(curr_time, "%Y-%m-%d %H:%M:%S")
+        if not config.task_id:
+            task_id = (
+                str(os.getpid())
+                + "*"
+                + str(int(time.mktime(time.strptime(creat_time, "%Y-%m-%d %H:%M:%S"))))
+            )
+        else:
+            task_id = config.task_id
+
+        content = {
+            "use_gpus": config.want_gpu_num,
+            "memo": config.memo,
+            "see_log": "tail -f " + config.get("see_log", "当前进程未使用 nohup 命令启动，无法查看日志"),
+            "register_time": datetime.datetime.strftime(curr_time, "%Y-%m-%d %H:%M:%S"),
+            "system_pid": os.getpid(),
+            "task_id": task_id,
+            "run_name": config.comet_name,
+            "comet_name": config.comet_name,
+            "logger_project": config.logger_project,
+        }
+        self.client.hset("running_processes", task_id, json.dumps(content))
+        log.info("成功登记进程使用信息到Redis服务器！")
+        return task_id
+
+    def deregister_process(self, config):
+        """
+        删除当前训练任务的信息
+        """
+        task = self.client.hget("running_processes", config.task_id)
+        if task:
+            self.client.hdel("running_processes", config.task_id)
+            log.info("成功删除Redis服务器上的进程使用信息！")
+        else:
+            log.info("无法找到当前训练任务在Redis服务器上的进程使用信息！或许可以考虑检查一下Redis的数据 🤔")
+
 
 @rank_zero_only
 def print_start_image():
@@ -1662,20 +1761,25 @@ def print_start_image():
     console.print("[bold cyan]")
     console.print("[bold cyan]")
     console.print("[bold cyan]        ______                  __   ___  __")
-    console.print("[bold cyan]        |  _  \\                 \\ \\ / (_)/ _|")
-    console.print("[bold cyan]        | | | |___ _ __   __ _   \\ V / _| |_ __ _ _ __")
-    console.print("[bold cyan]        | | | / _ \\ '_ \\ / _` |   \\ / | |  _/ _` | '_ \\")
-    console.print("[bold cyan]        | |/ /  __/ | | | (_| |   | | | | || (_| | | | |")
-    console.print("[bold cyan]        |___/ \\___|_| |_|\\__, |   \\_/ |_|_| \\__,_|_| |_|")
+    console.print(
+        "[bold cyan]        |  _  \\                 \\ \\ / (_)/ _|")
+    console.print(
+        "[bold cyan]        | | | |___ _ __   __ _   \\ V / _| |_ __ _ _ __")
+    console.print(
+        "[bold cyan]        | | | / _ \\ '_ \\ / _` |   \\ / | |  _/ _` | '_ \\")
+    console.print(
+        "[bold cyan]        | |/ /  __/ | | | (_| |   | | | | || (_| | | | |")
+    console.print(
+        "[bold cyan]        |___/ \\___|_| |_|\\__, |   \\_/ |_|_| \\__,_|_| |_|")
     console.print("[bold cyan]                          __/ |")
     console.print("[bold cyan]                         |___/")
     console.print("[bold cyan]")
     console.print("[bold cyan]")
     console.print("[bold cyan] Github: https://github.com/D-Yifan")
-    console.print("[bold cyan] Zhi hu: https://www.zhihu.com/people/deng_yifan")
+    console.print(
+        "[bold cyan] Zhi hu: https://www.zhihu.com/people/deng_yifan")
     console.print("[bold cyan]")
     console.print("[bold cyan]")
-
 
 
 @rank_zero_only

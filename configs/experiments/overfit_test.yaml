@@ -1,0 +1,14 @@
+# @package _global_
+
+defaults:
+    - demo_debug.yaml
+    - _self_
+
+# Section 关于实验的标记
+# logger: comet # 如果不想上传可以为空，默认为空
+comet_name: testing_overfit # 对本次实验的简短描述
+memo: 测试是否可以对小批量数据集过拟合 # 对本次实验的详细描述，可以用来记录本次实验的具体细节和改动
+proc_title: special_for_testing_overfit # 修改后的进程名
+
+fast_run: False  # 快速运行整个训练和测试过程，便于查找bug
+dataset_consumption: 0.1 # 数据集的使用量，如果为小数则代表使用的比例，否则为数据条数，为空表示不限制

@@ -1,0 +1,11 @@
+# @package _global_
+
+defaults:
+    - exp_demo/baseline.yaml
+    - _self_
+
+# 该配置文件可以便捷地对实验进行 debug
+# 可以通过引用某个配置文件，然后在 _self_ 下进行修改，来快速修改实验配置
+# 还可以通过在该文件下直接覆盖某个配置，来快速修改实验配置
+# 例如可以取消注释下面的代码，来快速修改实验的 batch_size
+# train_batch_size: 2

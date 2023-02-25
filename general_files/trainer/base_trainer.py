@@ -1,12 +1,12 @@
 '''
-Author: D-Yifan 553192215@qq.com
+Author: appleloveme 553192215@qq.com
 Date: 2022-08-17 13:04:55
-LastEditors: D-Yifan https://github.com/D-Yifan
-LastEditTime: 2022-10-18 13:08:06
-FilePath: /code_frame/general_files/trainer/base_trainer.py
+LastEditors: appleloveme 553192215@qq.com
+LastEditTime: 2022-11-07 15:53:52
+FilePath: /codes_frame/general_files/trainer/base_trainer.py
 Description: 
 
-Copyright (c) 2022 by D-Yifan 553192215@qq.com, All Rights Reserved. 
+Copyright (c) 2022 by appleloveme 553192215@qq.com, All Rights Reserved. 
 '''
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, StochasticWeightAveraging
@@ -15,7 +15,10 @@ from general_files.utils.common_util import (
     get_logger,
     LiteProgressBar,
 )
+from pathlib import Path
 from general_files.utils.data_util import dict_list_to_tensor, DataModule
+from pytorch_lightning.plugins import ApexMixedPrecisionPlugin
+
 
 log = get_logger(__name__)
 
@@ -30,7 +33,7 @@ class ModelTrainer:
         tokenizer,
         experiment,
     ):
-        if config.stage != "finetune":
+        if config.stage != "finetune" or (config.stage == "finetune" and ".ckpt" not in config.ckpt_path):
             # 因为框架的特殊性，如果不设置这里模型会从ckpt的断点继续训练
             # 如果想只加载模型权重，需要下面的设置
             config.ckpt_path = None
@@ -46,7 +49,7 @@ class ModelTrainer:
 
         self.tokenizer = tokenizer
         if experiment:
-            logger = CustomCometLoggerForPL()
+            logger = CustomCometLoggerForPL(api_key=experiment.api_key, project_name=experiment.project_name)
             logger._experiment = experiment
         else:
             logger = None
@@ -55,7 +58,7 @@ class ModelTrainer:
             monitor=config.checkpoint_monitor,
             mode=config.checkpoint_monitr_mode,
             save_top_k=config.save_total_limit,
-            save_last=True,
+            save_last=False,
             verbose=True,
             dirpath=config.result_path,
             filename="best_model",
@@ -64,8 +67,8 @@ class ModelTrainer:
 
         early_stop_callback = EarlyStopping(
             monitor=config.checkpoint_monitor,
-            min_delta=0.001,
-            patience=5,
+            min_delta=0.02,
+            patience=2,
             verbose=True,
             mode=config.checkpoint_monitr_mode,
         )
@@ -77,15 +80,13 @@ class ModelTrainer:
         ]
         if config.stage != "fast_run":
             callbacks.append(checkpoint_callback)
-        
-        if config.get("use_swa"):
-            callbacks.append(StochasticWeightAveraging(swa_lrs=1e-2))
 
         if config.get("use_swa"):
             callbacks.append(StochasticWeightAveraging(swa_lrs=1e-2))
 
         self.trainer = pl.Trainer(
-            logger=logger, callbacks=callbacks, **config.pl_train_args
+            logger=logger, callbacks=callbacks,
+            **config.pl_train_args
         )
 
     def collate_fn(self, batch):
@@ -102,3 +103,11 @@ class ModelTrainer:
             # 设置为推荐的学习率
             self.model.config.lr = lr_finder.suggestion()
         self.trainer.fit(model=self.model, datamodule=self.data_module)
+
+        model = self.trainer.model
+        save_path = Path(self.config.result_path).joinpath("best_model")
+        if hasattr(model, "backbone") and self.config.get("save_best_model"):
+            model.backbone.save_pretrained(save_path)
+        log.info(f"Saved best model checkpoint at {save_path}")
+
+        return model

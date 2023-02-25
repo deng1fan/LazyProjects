@@ -1,4 +1,3 @@
-
 import os
 import sys
 import torch.nn as nn
@@ -6,7 +5,7 @@ from transformers import BertTokenizer, AutoTokenizer
 from general_files.utils import common_util as utils
 from general_files.utils.common_util import Result
 from general_files.utils.others.data_processor.processor import get_data_processor
-
+from general_files.utils.data_util import save_as
 
 log = utils.get_logger(__name__)
 
@@ -17,11 +16,31 @@ class Tokenizer(nn.Module):
         self.config = config
         self.unk_token_num = 50
         if config.tokenize_method == "auto":
-            self.tokenizer = self.get_tokenizer_from_pretrained(config.pretrain_model.split(':')[-1])
+            if self.config.ckpt_path:
+                try:
+                    if ".ckpt" in self.config.ckpt_path:
+                        tokenizer_path = "/".join(config.ckpt_path.split("/")[:-1]) + "/best_model"
+                    else:
+                        tokenizer_path = config.ckpt_path + "/best_model"
+                    self.tokenizer = self.get_tokenizer_from_pretrained(tokenizer_path)
+                except Exception as e:
+                    log.error(f"加载ckpt分词器失败！尝试加载默认分词器！")
+                    self.tokenizer = self.get_tokenizer_from_pretrained(config.pretrain_model.split(':')[-1])
+                    self.add_special_tokens(list(config.additional_special_tokens))
+            else:
+                self.tokenizer = self.get_tokenizer_from_pretrained(config.pretrain_model.split(':')[-1])
+                self.add_special_tokens(list(config.additional_special_tokens))
         else:
             self.tokenizer = None
         self.init_dict()
-
+    
+        
+    def save_pretrained(self, save_path):
+        if self.tokenizer:
+            self.tokenizer.save_pretrained(save_path)
+        else:
+            save_as(self, save_path + "/tokenizer", data_name="tokenizer")
+            
     def init_dict(self):
         if self.tokenizer is not None:
             if self.tokenizer.cls_token and not self.tokenizer.bos_token:
@@ -29,6 +48,15 @@ class Tokenizer(nn.Module):
             if self.tokenizer.sep_token and not self.tokenizer.eos_token:
                 self.tokenizer.eos_token = self.tokenizer.sep_token
             additional_flags = ['<mask>']
+            
+            # if not self.tokenizer.decoder_start_token:
+            #     decoder_start_token = self.config.decoder_start_token if self.config.decoder_start_token else self.tokenizer.bos_token
+            #     self.decoder_start_token = decoder_start_token
+            #     additional_flags.append(decoder_start_token)
+            #     self.tokenizer.decoder_start_token = decoder_start_token
+            # else:
+            #     self.decoder_start_token = self.tokenizer.decoder_start_token
+                
             if not self.tokenizer.pad_token:
                 self.pad_token = '<pad>'
                 additional_flags.append('<pad>')
@@ -54,6 +82,7 @@ class Tokenizer(nn.Module):
             if not self.tokenizer.eos_token:
                 self.eos_token = '<eos>'
                 additional_flags.append('<eos>')
+                self.tokenizer.eos_token = '<eos>'
             else:
                 self.eos_token = self.tokenizer.eos_token
             self.end_token = self.tokenizer.eos_token
@@ -369,7 +398,7 @@ class Tokenizer(nn.Module):
         if pretrain_model in ['fnlp/bart-base-chinese', 'fnlp/bart-large-chinese', 'fnlp/cpt-large',
                               'fnlp/cpt-base']:
             # 一些特殊情况处理
-            tokenizer = BertTokenizer.from_pretrained(pretrain_model, cache_dir=self.config.cache_dir)
+            tokenizer = BertTokenizer.from_pretrained(pretrain_model, cache_dir=self.config.cache_dir,)
         else:
             tokenizer = AutoTokenizer.from_pretrained(pretrain_model, cache_dir=self.config.cache_dir)
         return tokenizer

@@ -1,35 +1,20 @@
 
-"""
-Author: D-Yifan 553192215@qq.com
-Date: 2022-08-17 13:06:56
-LastEditors: D-Yifan 553192215@qq.com
-LastEditTime: 2022-10-13 15:08:29
-FilePath: general_files/models/hf_seq2seq_base.py
-Description: 
 
-Copyright (c) 2022 by D-Yifan 553192215@qq.com, All Rights Reserved. 
-"""
 import torch
-import torch.nn as nn
 from general_files.models.pl_base_model import BasePLModel
-from rich.console import Console
 from general_files.utils.common_util import Result
-from pytorch_lightning.utilities import rank_zero_only
-
 
 class ModelNet(BasePLModel):
     def __init__(self, config, tokenizer, as_pipeline=False):
         super(ModelNet, self).__init__(config, tokenizer)
         self.model_type = self.model_mode[config.hf_model_type if not as_pipeline else config.pipline_model_type]
-        self.backbone = self.init_pretrained_model(self.model_type)  # 实例化对象
+        self.backbone = self.init_pretrained_model(
+            self.model_type, as_pipeline)  # 实例化对象
 
-        if self.config.use_param_noise:
+        if self.config.get("use_param_noise", False):
             for name, para in self.backbone.named_parameters():
-                self.backbone.state_dict()[name][:] += (
-                    (torch.rand(para.size()) - 0.5)
-                    * config.noise_lambda
-                    * torch.std(para)
-                )
+                self.backbone.state_dict()[
+                    name][:] += (torch.rand(para.size()) - 0.5) * config.noise_lambda * torch.std(para)
 
     def forward(
         self,
@@ -42,19 +27,37 @@ class ModelNet(BasePLModel):
         **other_features  # 如果有其他特征参数，建议加decoder前缀，保持框架一致性
     ):
         result = Result()
-        outputs = self.backbone(
-            input_ids=input_ids,
-            labels=torch.where(labels == self.tokenizer.pad_token_id, -100, labels)
-            if labels is not None
-            else None,
-            attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
-        )
-        logits = torch.log_softmax(outputs["logits"], dim=-1)
-        result.add(logits=logits)
-        if labels is not None:
+        outputs = self.backbone(input_ids=input_ids,
+                                decoder_input_ids=other_features['decoder_input_ids'],
+                                output_hidden_states=True,
+                                output_attentions=True,
+                                labels=torch.where(
+                                    labels == self.tokenizer.pad_token_id, -100, labels) if labels is not None else None,
+                                attention_mask=input_ids.ne(
+                                    self.tokenizer.pad_token_id)
+                                )
+        lm_logits = outputs['logits']
+        decoder_last_hidden_state = outputs['decoder_hidden_states'][-1]
+        encoder_last_hidden_state = outputs['encoder_last_hidden_state']
+
+        if len(self.config.get("loss")) < 1:
+            raise Exception("请至少选择一个损失函数！")
+        loss = 0
+        ###############################################
+        # 计算交叉熵损失
+        ###############################################
+        if "lm_loss" in self.config.get("loss") and labels is not None:
             result.add(labels=labels)
-            loss = self.NLLLoss(logits=logits, labels=labels)
-            result.add(loss=loss, lm_loss=loss)
+            lm_loss = self.CrossEntropyLoss(logits=lm_logits, labels=labels)
+            result.add(lm_loss=lm_loss)
+            loss += lm_loss
+
+        if self.stage == "train" and (
+                loss != loss or isinstance(loss, int)
+        ):
+            raise Exception("Loss为Nan或无梯度，请先检查数据正确性！")
+
+        result.add(loss=loss)
         return result
 
    

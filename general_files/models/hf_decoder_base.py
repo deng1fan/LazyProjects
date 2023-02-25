@@ -1,24 +1,13 @@
-'''
-Author: D-Yifan 553192215@qq.com
-Date: 2022-08-17 13:06:56
-LastEditors: D-Yifan 553192215@qq.com
-LastEditTime: 2022-10-23 16:54:10
-FilePath: general_files/models/hf_decoder_base.py
-Description: 
-
-Copyright (c) 2022 by D-Yifan 553192215@qq.com, All Rights Reserved. 
-'''
 import torch
 from general_files.models.pl_base_model import BasePLModel
-from rich.console import Console
 from general_files.utils.common_util import Result
-
 
 class ModelNet(BasePLModel):
     def __init__(self, config, tokenizer, as_pipeline=False):
         super(ModelNet, self).__init__(config, tokenizer)
         self.model_type = self.model_mode[config.hf_model_type if not as_pipeline else config.pipline_model_type]
-        self.backbone = self.init_pretrained_model(self.model_type)  # 实例化对象
+        self.backbone = self.init_pretrained_model(
+            self.model_type, as_pipeline)  # 实例化对象
 
         if self.config.use_param_noise:
             for name, para in self.backbone.named_parameters():

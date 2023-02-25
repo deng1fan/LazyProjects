@@ -1,5 +1,14 @@
+'''
+Author: appleloveme 553192215@qq.com
+Date: 2022-11-13 14:59:54
+LastEditors: appleloveme 553192215@qq.com
+LastEditTime: 2022-11-18 08:12:25
+FilePath: /codes_frame/data/wow_faithdial/basic_preprocess.py
+Description: 
+
+Copyright (c) 2022 by appleloveme 553192215@qq.com, All Rights Reserved. 
+'''
 from general_files.utils.others.stanford_nlp.stanfordnlp import StanfordCoreNLP
-import spacy
 import os
 from tqdm import tqdm
 import general_files.utils.common_util as utils
@@ -11,6 +20,7 @@ from general_files.utils.data_util import (
 )
 from data.utils import caller as data_method_caller
 from general_files.modules.pipeline import Pipeline
+import random
 
 
 log = utils.get_logger(__name__)
@@ -22,7 +32,8 @@ class Processor(BaseProcessor):
 
     def read_data(self, stage):
         data_ckpt_version = self.config.dataset_version
-        data_path = f"{self.public_dataset_path}/preprocessed_data_{data_ckpt_version}"
+        data_ckpt_split = self.config.get("dataset_split", "")
+        data_path = f"{self.public_dataset_path}/preprocessed_data_{data_ckpt_version}_{data_ckpt_split}"
         if not os.path.exists(data_path + ".pt"):
             all_rows = self.preprocess_data(data_path)[stage]
         else:
@@ -58,8 +69,9 @@ class Processor(BaseProcessor):
             test_output = test_output.map(
                 lambda batch: {
                     "reference": batch["response"],
-                    "bert_score_reference": batch["knowledge"],
-                    "f1_reference": batch["knowledge"],
+                    "bert_score_reference": batch["knowledge"].lower(),
+                    "f1_reference": batch["knowledge"].lower(),
+                    "q2_reference": batch["knowledge"].lower(),
                 },
                 desc="数据集映射",
             )
@@ -69,130 +81,40 @@ class Processor(BaseProcessor):
         """
         原始数据集转换为Query生成模型训练所需的格式
         """
-        all_data = {
-            "train": read_by(
-                self.public_dataset_path + "/train.json", data_name="训练集"
-            ),
-            "valid": read_by(
-                self.public_dataset_path + f"/valid_{self.config.dataset_split}_split.json", data_name="验证集"
-            ),
-            "test": read_by(
-                self.public_dataset_path + f"/test_{self.config.dataset_split}_split.json", data_name="测试集"
-            ),
-        }
-        processed_data = {
-            "train": [],
-            "valid": [],
-            "test": [],
-        }
+        wow_data = read_by(data_path.replace(
+            self.config.dataset, 'wizard_of_wikipedia') + '.pt', "原始 WOW 数据集")
+        faith_dial_data = read_by(data_path.replace(
+            self.config.dataset, 'faith_dial') + '.pt', "原始 FaithDial 数据集")
 
-        process_flow = [
-            "clean_text",
-            # "your-custom-process-flow" # 你可以在这里添加自定义的数据处理流程，名称对应于 utils 中的方法名
-        ]
-
-        ###############################################
-        # 读取预处理进度
-        ###############################################
-        data_ckpt_path = data_path + "_ckpt"
-        if os.path.exists(data_ckpt_path + ".pt"):
-            data_ckpt = read_by(data_ckpt_path + ".pt", data_name="数据集预处理ckpt")
-            sents_static = data_ckpt.sents_static
-            processed_data = data_ckpt["processed_data"]
-        else:
-            sents_static = Result(
-                responses=[],
-                knowledges=[],
-            )
-            data_ckpt = Result(
-                stage=["train", "valid", "test"],
-                start_index=0,
-                processed_data=processed_data,
-                sents_static=sents_static,
-            )
-
-        error_count = 0
-        for stage in data_ckpt.stage:
-            data = all_data[stage][data_ckpt.start_index :]
-            for i, item in enumerate(tqdm(data, desc=f"预处理{stage}数据集")):
-                utterances = []
-                dialog_history = []
-                for dialog_idx, dialog in enumerate(item["dialog"]):
+        for stage in ["train", "valid", "test"]:
+            wow_all_rows = wow_data[stage]
+            for dialog_id, dialog in enumerate(tqdm(wow_all_rows, desc=f"调整{stage}数据集格式")):
+                for uttr_id, uttr in enumerate(dialog["utterances"]):
                     ###############################################
-                    # 格式化原数据结构
+                    # 数据集合并
                     ###############################################
-                    response = dialog["text"]
-                    if len(dialog_history) < 1:
-                        dialog_history.append("__topic__:" + item["chosen_topic"])
-                    history = dialog_history.copy()
-                    dialog_history.append(response)
-                    speaker = (
-                        "Wizard" if "Wizard" in dialog["speaker"] else "Apprentice"
-                    )
-                    is_wizard = True if speaker == "Wizard" else False
-                    if is_wizard:
-                        if len(list(dialog["checked_sentence"].values())) < 1:
-                            topic = list(dialog["checked_passage"].values())[0]
-                            passage = [topic]
-                            for p in dialog["retrieved_passages"]:
-                                if topic in p:
-                                    passage = p[topic]
-                            knowledge = passage[0]
-                        else:
-                            knowledge = list(dialog["checked_sentence"].values())[0]
-                    else:
-                        continue
-                                        
+                    wow_data[stage][dialog_id]["utterances"][uttr_id]['dataset'] = 'wow'
+            wow_keys = uttr.keys()
 
+            faith_dial_rows = faith_dial_data[stage]
+            for dialog_id, dialog in enumerate(tqdm(faith_dial_rows, desc=f"合并{stage}数据集")):
+                for uttr_id, uttr in enumerate(dialog["utterances"]):
                     ###############################################
-                    # 封装新的数据结构
+                    # 数据集合并
                     ###############################################
-                    uttr = Result(
-                        history=history,
-                        knowledge=knowledge,
-                        response=response,
-                    )
-                    ###############################################
-                    # 数据预处理
-                    ###############################################
-                    try:
-                        uttr = data_method_caller(process_flow, uttr)
-                    except Exception as e:
-                        print_error_info(e)
-                        error_count += 1
-                        continue
+                    faith_dial_data[stage][dialog_id]["utterances"][uttr_id]['dataset'] = 'faith_dial'
+                    pop_keys = []
+                    for key in uttr.keys():
+                        if key not in wow_keys:
+                            pop_keys.append(key)
+                    for key in pop_keys:
+                        faith_dial_data[stage][dialog_id]["utterances"][uttr_id].pop(
+                            key)
 
-                    utterances.append(uttr)
+            wow_data[stage].extend(faith_dial_data[stage])
+            random.shuffle(wow_data[stage])
 
-                    sents_static.get("responses").append(uttr['response'])
-                    sents_static.get("knowledges").append(uttr['knowledge'])
+        all_data = wow_data
+        save_as(all_data, data_path, data_name="预处理数据集")
 
-                processed_data[stage].append(
-                    {"dialog_idx": i, "utterances": utterances}
-                )
-
-                ###############################################
-                # 保存数据集预处理进度
-                ###############################################
-                if i != 0 and i % 200 == 0:
-                    current_stage = data_ckpt.stage[data_ckpt.stage.index(stage):]
-                    data_ckpt.merge_or_update(
-                        Result(
-                            stage=current_stage,
-                            start_index=i,
-                            processed_data=processed_data,
-                            sents_static=sents_static,
-                        )
-                    )
-                    save_as(data_ckpt, data_ckpt_path, data_name="数据集预处理ckpt")
-
-            data_ckpt["start_index"] = 0
-
-        save_as(processed_data, data_path, data_name="预处理数据集")
-
-        os.remove(data_ckpt_path + ".pt")
-        print(f"预处理完成，共有{error_count}条数据出错")
-        
-        nlp_model.close()
-        
-        return processed_data
+        return all_data

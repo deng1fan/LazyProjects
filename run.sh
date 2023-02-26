@@ -147,7 +147,7 @@ experiment="+experiments="$config_name
     cd $base_path
     tmux_session="None"
     see_log="$base_path/nohups/${exp//" "/"--"}_$day_time_$hour_time.out"
-    run_command="python run.py $sweep_args +tmux_session=$tmux_session +experiment_plan_id=$experiment_plan_id  +see_log=\"$see_log\" comet_name=$exp fast_run=False use_gpu=True wait_gpus=True force_reload_data=True logger=comet "$experiment
+    run_command="python run.py $sweep_args +tmux_session=\"$tmux_session\" +experiment_plan_id=$experiment_plan_id  +see_log=\"$see_log\" comet_name=\"$exp\" fast_run=False use_gpu=True wait_gpus=True force_reload_data=True logger=comet "$experiment
     run_command=${run_command//"\\"/""}
     ADD_COLOR "启动命令:" pink
     ADD_COLOR "nohup $run_command > nohups/${exp//" "/"--"}_$day_time_$hour_time.out 2>&1 &" pink

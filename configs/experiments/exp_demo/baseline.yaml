@@ -93,7 +93,7 @@ top_p: 0.6
 max_generation_length: 128
 
 # `````````````````````````训练流程相关````````````````````````````
-max_epochs: 10
+max_epochs: 2
 lr: 6.25e-5
 scheduler: linear # linear, constant, cosine， cosine_w_restarts， polynomial
 adafactor: False # 使用AdaFactor还是AdamW优化器

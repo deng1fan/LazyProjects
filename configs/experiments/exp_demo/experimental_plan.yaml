@@ -27,13 +27,13 @@ experiments:
   baseline测试1:
     config_name: exp_demo/baseline
     hyper_params:
-      memo: 测试实验 1
-      train_batch_size: 4
+      memo: 测试实验 1：使用 hf_seq2seq
 
   baseline测试2:
     config_name: exp_demo/baseline
     hyper_params:
-      memo: 测试实验 2
-      train_batch_size: 2
+      memo: 测试实验 2：使用 hf_custom
+      model_processor: hf_custom
+      pretrain_model: t5:t5-base
 
   

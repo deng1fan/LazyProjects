@@ -109,6 +109,11 @@ def info_nce(query, positive_key, negative_keys=None, temperature=0.1, reduction
             negative_logits = negative_logits.squeeze(1)
 
         if use_weighted:
+
+            # positive_key [batch, hidden]
+            # negative_keys [batch, num_negative, hidden]
+            # query [batch, 1, hidden]
+
             neg_weight = (positive_key.unsqueeze(1).repeat(1, negative_keys.shape[1], 1) * negative_keys).sum(-1)
             # negative_logits *= -torch.log((-neg_weight + 1.1)) + 1
 

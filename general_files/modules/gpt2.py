@@ -169,11 +169,11 @@ class CustomModel(GPT2PreTrainedModel):
         ###############################################
         # 4、包装返回值
         ###############################################
-        if other_features["decoder_stage"] == "train" and (
+        if other_features["decoder_stage"] != "test" and (
             loss != loss or isinstance(loss, int)
         ):
-            raise Exception("Loss为Nan或无梯度，请先检查数据正确性！")
-        if other_features["decoder_stage"] == "train":
+            raise Exception("Loss为Nan或无梯度，请先检查数据正确性以及超参中 Loss 是否正确选择！")
+        if other_features["decoder_stage"] != "test":
             output = (lm_logits,) + transformer_outputs[1:] + (result,)
             return ((loss,) + output) if loss is not None else output
         else:

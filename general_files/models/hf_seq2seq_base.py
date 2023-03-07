@@ -52,10 +52,10 @@ class ModelNet(BasePLModel):
             result.add(lm_loss=lm_loss)
             loss += lm_loss
 
-        if self.stage == "train" and (
+        if self.stage != "test" and (
                 loss != loss or isinstance(loss, int)
         ):
-            raise Exception("Loss为Nan或无梯度，请先检查数据正确性！")
+            raise Exception("Loss为Nan或无梯度，请先检查数据正确性以及超参中 Loss 是否正确选择！")
 
         result.add(loss=loss)
         return result

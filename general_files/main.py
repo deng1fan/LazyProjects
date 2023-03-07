@@ -48,6 +48,7 @@ from general_files.utils.common_util import (
     init_comet_experiment,
     seed_everything,
     RedisClient,
+    print_start_image,
 )
 from general_files.utils.model_util import (
     get_eval_metrics,
@@ -71,6 +72,8 @@ with open("./configs/default_config.yaml", "r") as file:
 
 
 def main(config: DictConfig) -> float:
+
+    print_start_image()
 
     ###############################################
     # 设置随机种子

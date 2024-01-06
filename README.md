@@ -15,7 +15,28 @@
 ![](https://img.shields.io/badge/知乎-邓什么邓-orange)
 
 
-# 本仓库已不再维护，相关功能会逐渐被拆解，融入 Lazydl 项目中，论文代码正在整理中....
+# 本仓库已不再维护，相关功能会逐渐被拆解，融入 Lazydl 项目中，论文代码正在整理中，先贴出FCE 的核心计算代码片段
+
+
+论文核心代码：
+```
+    class CosineSimilarity(torch.nn.Module):
+        def forward(self, tensor_1, tensor_2):
+            normalized_tensor_1 = tensor_1 / tensor_1.norm(dim=-1, keepdim=True)
+            normalized_tensor_2 = tensor_2 / tensor_2.norm(dim=-1, keepdim=True)
+            return (normalized_tensor_1 * normalized_tensor_2).sum(dim=-1)
+    cal_sim = CosineSimilarity()
+    knowledge_emb = model.get_input_embeddings()(
+        knowledges
+    )
+    sim_dist = -cal_sim(knowledge_emb, labels_emb)
+    sim_score = -torch.log(sim_dist + 1 + self.config.get("fce_lamda", 0.01))+ 1
+    
+    weighted_lm_logits = torch.mul(sim_score.unsqueeze(-1).repeat(1, 1, logits.shape[-1]), logits)
+    loss_fct = CrossEntropyLoss(ignore_index=-100)
+    fce_loss = loss_fct(weighted_lm_logits.view(-1, weighted_lm_logits.size(-1)),
+                                   torch.where(labels == self.tokenizer.pad_token_id, -100, labels).view(-1))
+```
 
 本框架借鉴网站开发中[前后端分离](https://zhuanlan.zhihu.com/p/66711706)的思想，对现有的框架进行接口定义，旨在更加快捷地进行深度学习实验，尤其是基于 [Huggingface](https://huggingface.co/models) 的模型。通过对 [PytorchLightning](https://pytorch-lightning.readthedocs.io/en/latest/) 进行进一步封装，在保证原有框架的灵活性的前提下，加入了更多新的功能：**基于 [Redis](https://redis.io) 的GPU实验排队**、**统一参数接口**、**实验结果自动上传 [Comet.ml](https://www.comet.com)**、**快速 Debug** 以及**批量运行**等多种特性。仅仅需要新增三个文件就可以实现一个新的实验的开发并享有框架的全部功能，同时由于对模型、数据、训练和测试等流程的解耦，可以轻松移植同样使用本框架的相同项目。
 
